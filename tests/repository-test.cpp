@@ -1,0 +1,80 @@
+#include "domain/timeline-mapper.hpp"
+#include "persistence/repository.hpp"
+
+#include <cstdlib>
+#include <iostream>
+
+#include <QCoreApplication>
+#include <QTemporaryDir>
+
+using replay_timeline::PendingRequest;
+using replay_timeline::Repository;
+using replay_timeline::domain::RecordingSegment;
+using replay_timeline::domain::TimelineMapper;
+
+namespace {
+void expect(bool condition, const char *message)
+{
+	if (!condition) {
+		std::cerr << "FAILED: " << message << '\n';
+		std::exit(EXIT_FAILURE);
+	}
+}
+} // namespace
+
+int main(int argc, char **argv)
+{
+	QCoreApplication application(argc, argv);
+	QTemporaryDir directory;
+	expect(directory.isValid(), "temporary directory is available");
+	const QString databasePath = directory.filePath(QStringLiteral("metadata.sqlite3"));
+
+	Repository repository;
+	QString error;
+	expect(repository.open(databasePath, error), "database opens and migrates");
+	expect(repository.recoverInterrupted(), "initial recovery succeeds");
+	const std::int64_t session = repository.createSession(100, QStringLiteral("2026-08-26T00:00:00.000Z"));
+	const std::int64_t run = repository.createRecordingRun(session, 1, 100);
+	const std::int64_t first = repository.createSegment(run, 1, QStringLiteral("C:/vídeo/parte,1.mkv"), 0, 100);
+	const std::int64_t second =
+		repository.createSegment(run, 2, QStringLiteral("C:/vídeo/parte-2.mkv"), 30'000, 30'100);
+	expect(first > 0 && second > 0, "recording segments persist");
+	expect(repository.closeSegment(first, 30'000, 30'100), "first split closes");
+	expect(repository.closeSegment(second, 90'000, 90'100), "second split closes");
+
+	const std::int64_t requestId = repository.createRequest(session, 1, run, 42'000, 42'100, QStringLiteral("Bug"));
+	expect(requestId > 0, "tagged request persists");
+	const std::optional<PendingRequest> request = repository.resolveOldestPending(1, 42'200);
+	expect(request && request->id == requestId && request->tag == QStringLiteral("Bug"),
+	       "oldest compatible request resolves");
+	const std::int64_t replay = repository.createReplay(session, request, 42'200,
+							    QStringLiteral("2026-08-26T00:00:42.200Z"),
+							    QStringLiteral("C:/replays/ação.mp4"));
+	const std::vector<RecordingSegment> segments = repository.segmentsForRun(run, 42'000);
+	const auto spans = TimelineMapper::mapReplay(42'000, 20'000, segments);
+	expect(spans.size() == 2, "repository segments feed split-aware mapping");
+	expect(repository.completeProbe(replay, 20'000, QStringLiteral("complete"), QStringLiteral("approximate"),
+					QStringLiteral("test"), spans),
+	       "probe result and spans commit atomically");
+	expect(repository.updateReplay(replay, QStringLiteral("Falha"), QStringLiteral("nota, com\nnova linha ✓")),
+	       "Unicode editable metadata persists");
+
+	const auto rows = repository.replays(session);
+	expect(rows.size() == 1 && rows.front().tag == QStringLiteral("Falha") &&
+		       rows.front().recordingStartNs == 22'000 && rows.front().recordingEndNs == 42'000,
+	       "review query reconstructs mapped replay");
+	expect(repository.csvRows(session).size() == 2, "split replay exports one row per association span");
+
+	const std::int64_t interrupted = repository.createSession(100'000, QStringLiteral("2026-08-26T01:00:00.000Z"));
+	expect(repository.createRequest(interrupted, 2, 0, -1, 100'100, QStringLiteral("Keep")) > 0,
+	       "pending request exists before restart");
+	repository.close();
+	expect(repository.open(databasePath, error) && repository.recoverInterrupted(), "restart recovery succeeds");
+	expect(!repository.resolveOldestPending(2, 200'000), "recovery abandons unresolved requests");
+	const auto sessions = repository.sessions();
+	expect(!sessions.empty() && sessions.front().status == QStringLiteral("interrupted"),
+	       "recovery marks open session interrupted");
+
+	std::cout << "repository tests passed\n";
+	return EXIT_SUCCESS;
+}

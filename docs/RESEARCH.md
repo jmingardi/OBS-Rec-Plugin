@@ -17,7 +17,7 @@ The official plugin template currently specifies:
 - `libobs`, `obs-frontend-api`, and optional Qt 6 targets
 - Qt `Core` and `Widgets` with `AUTOMOC`, `AUTOUIC`, and `AUTORCC`
 
-The template's build machinery is the correct base, but its sample `buildspec.json` is stale as of this research: it pins OBS 31.1.1 and the 2025-07-11 dependencies. OBS 32.2.2 uses the 2026-07-15 OBS dependency bundles. When implementation starts, copy the template structure and update all source/dependency versions and checksums as one reviewed change.
+The template's build machinery is the correct base, but its sample `buildspec.json` was stale as of this research: it pinned OBS 31.1.1 and the 2025-07-11 dependencies. The Phase 0 scaffold imports official template commit `3e7d7ac` and updates the pins and verified archive hashes for OBS 32.2.2 and the 2026-07-15 OBS dependency bundles.
 
 Use the exact Qt 6 distribution from the matching OBS dependency bundle instead of a separately installed Qt SDK. This avoids Qt ABI and deployment mismatches. OBS itself currently uses C++17, so the plugin should also use C++17 without compiler extensions.
 
@@ -75,6 +75,10 @@ Pending requests should be FIFO and have explicit timeout/failure states. Never 
 The saved replay's configured maximum duration is not its actual duration. Keyframe placement, startup fill, size limits, and container timestamps can produce a shorter file.
 
 Probe the completed file off the OBS/UI thread with FFmpeg `libavformat`, using the FFmpeg build supplied by the matching OBS dependencies. Prefer container duration when valid and fall back to the maximum end timestamp across audio/video streams. Persist both the duration and probe status; failed probes remain reviewable and retryable.
+
+### SQLite deployment spike
+
+The Qt 6 dependency archive pinned for OBS 32.2.2 does not contain the `QSQLITE` driver. The plugin therefore compiles the official SQLite 3.53.4 amalgamation directly, with loadable extensions disabled. The official archive's SHA3-256 was verified before import; provenance and hashes are recorded in `vendor/sqlite/README.md`. This avoids a system SQLite dependency and keeps the database format portable.
 
 ### Threading
 

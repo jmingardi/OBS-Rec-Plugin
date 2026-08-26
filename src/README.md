@@ -1,18 +1,15 @@
-# Planned source layout
-
-Main source files will be added only after the implementation plan is reviewed.
+# Source layout
 
 ```text
 src/
   plugin/       module entry point and lifetime composition
-  obs/          frontend callbacks, output signals, OBS RAII wrappers
-  domain/       entities and immutable events
-  core/         session state machine and timeline mapper
-  storage/      repository interface and SQLite implementation/migrations
-  media/        asynchronous FFmpeg duration probing
-  hotkeys/      configurable tagged hotkey registration and correlation
-  ui/           dock, Qt models, delegates, and settings dialog
-  export/       CSV writer and later editor formats
+  obs/          frontend callbacks, recording output signals, and thread handoff
+  controller/   capture-session state, tagged hotkeys, correlation, and probe queue
+  domain/       pure pause-aware timeline mapping value types and algorithms
+  persistence/  SQLite schema, recovery, queries, and transactions
+  media/        asynchronous FFmpeg/libavformat duration probing
+  ui/           dock, session selector, searchable replay model, and editing
+  export/       deterministic UTF-8/RFC 4180 CSV writer
 ```
 
-Dependencies point inward: `domain` and the pure timeline engine know nothing about OBS, Qt widgets, SQLite, or FFmpeg. UI and OBS adapters communicate through controller/repository interfaces.
+The pure timeline engine knows nothing about OBS, Qt, SQLite, or FFmpeg. OBS callbacks copy their data and queue events to the controller; media probes run in the global Qt thread pool and return results to the controller thread.

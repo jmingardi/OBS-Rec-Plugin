@@ -2,11 +2,15 @@
 
 ```text
 tests/
-  unit/         pure timeline, state-machine, correlation, and CSV tests
-  storage/      migrations, recovery, transactions, and Unicode paths
-  integration/  adapter tests against supported OBS builds where practical
-  fixtures/     tiny generated media fixtures and expected metadata
-  manual/       reproducible OBS lifecycle test scripts/checklists
+  timeline-mapper-test.cpp  pause normalization, clamping, replay-only, and split spans
+  repository-test.cpp       migrations, recovery, transactions, and Unicode metadata
+  csv-exporter-test.cpp     stable columns, timecodes, RFC 4180 quoting, and replay-only rows
 ```
 
-The highest-risk behavior is timing and lifecycle logic. Tests should use an injected monotonic clock and explicit event sequences rather than sleeping. Media fixtures must be small, redistributable, and document how they were generated.
+Run all native tests with:
+
+```powershell
+ctest --test-dir build_x64 -C RelWithDebInfo --output-on-failure
+```
+
+The remaining highest-risk behavior is OBS runtime integration: output-specific split signals, Replay Buffer save latency, pause behavior with shared/separate encoders, rapid saves, and unload while outputs are active. These require the manual compatibility matrix described in `docs/IMPLEMENTATION_PLAN.md`; deterministic tests do not use sleeps.

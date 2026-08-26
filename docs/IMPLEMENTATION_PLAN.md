@@ -2,6 +2,8 @@
 
 The phases are ordered to retire API and timing risk before investing in the full dock. A phase is complete only when its listed evidence exists.
 
+Current progress: the Windows x64 MVP implementation is present. The official OBS 32.2.2/Qt scaffold configures successfully, the complete plugin builds with MSVC warnings treated as errors, and timeline, SQLite recovery/Unicode, split-span, and CSV tests pass. Live OBS output/hotkey compatibility-matrix tests and cross-platform runtime validation remain before a public release.
+
 ## Phase 0 — Build and API feasibility
 
 1. Import the official `obsproject/obs-plugintemplate` build, packaging, formatting, and CI structure.

@@ -1,6 +1,7 @@
 # Build outputs and downloaded OBS dependencies
 /.deps/
-/build*/
+/build/
+/build_*/
 /release/
 /install/
 /cmake-build-*/

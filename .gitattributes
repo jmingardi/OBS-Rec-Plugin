@@ -1,0 +1,26 @@
+* text=auto
+.gitattributes text eol=lf
+.gitignore text eol=lf
+
+*.c text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.ini text eol=lf
+*.in text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.ps1 text eol=lf
+build-aux/* text eol=lf
+.github/scripts/build-* text eol=lf
+.github/scripts/package-* text eol=lf
+.github/scripts/utils.zsh/* text eol=lf
+
+# Preserve the verified upstream amalgamation byte-for-byte.
+vendor/sqlite/sqlite3.c -whitespace
+vendor/sqlite/sqlite3.h -whitespace
+vendor/sqlite/sqlite3ext.h -whitespace
