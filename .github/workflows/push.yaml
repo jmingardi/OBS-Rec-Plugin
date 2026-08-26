@@ -5,6 +5,7 @@ on:
     branches:
       - master
       - main
+      - test
       - 'release/**'
     tags:
       - '*'
@@ -13,7 +14,7 @@ permissions:
 jobs:
   check-format:
     name: Check Formatting 🔍
-    if: github.ref_name == 'master' || github.ref_name == 'main'
+    if: github.ref_name == 'master' || github.ref_name == 'main' || github.ref_name == 'test'
     uses: ./.github/workflows/check-format.yaml
     permissions:
       contents: read
@@ -36,7 +37,8 @@ jobs:
         !cancelled() &&
         (
           (github.ref_type == 'tag' && needs.build-project.result == 'success') ||
-          github.ref_name == 'main'
+          github.ref_name == 'main' ||
+          github.ref_name == 'test'
         )
       }}
     runs-on: ubuntu-24.04
@@ -45,23 +47,29 @@ jobs:
       run:
         shell: bash
     steps:
+      - name: Check Out Release Source 🛎️
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Check Release Tag ☑️
         id: check
         env:
           PLUGIN_NAME: ${{ needs.build-project.outputs.pluginName || 'OBS Replay Timeline' }}
+          PLUGIN_VERSION: ${{ needs.build-project.outputs.pluginVersion || '0.0.0' }}
         run: |
           : Check Release Tag ☑️
           if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
           shopt -s extglob
 
-          if [[ "${GITHUB_REF_TYPE}" == 'branch' && "${GITHUB_REF_NAME}" == 'main' ]]; then
+          if [[ "${GITHUB_REF_TYPE}" == 'branch' && ( "${GITHUB_REF_NAME}" == 'main' || "${GITHUB_REF_NAME}" == 'test' ) ]]; then
             short_hash="${GITHUB_SHA:0:9}"
             echo 'validTag=true' >> $GITHUB_OUTPUT
             echo 'prerelease=true' >> $GITHUB_OUTPUT
             echo 'draft=false' >> $GITHUB_OUTPUT
             echo 'assetScope=windows' >> $GITHUB_OUTPUT
-            echo "version=build-${GITHUB_RUN_NUMBER}-${short_hash}" >> $GITHUB_OUTPUT
-            echo "releaseName=${PLUGIN_NAME} Development Build #${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
+            echo "version=build-${GITHUB_REF_NAME}-${GITHUB_RUN_NUMBER}-${short_hash}" >> $GITHUB_OUTPUT
+            echo "releaseName=${PLUGIN_NAME} - ${PLUGIN_VERSION}" >> $GITHUB_OUTPUT
             exit 0
           fi
 
@@ -72,7 +80,7 @@ jobs:
               echo 'draft=true' >> $GITHUB_OUTPUT
               echo 'assetScope=all' >> $GITHUB_OUTPUT
               echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
-              echo "releaseName=${PLUGIN_NAME} ${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+              echo "releaseName=${PLUGIN_NAME} - ${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
               ;;
             +([0-9]).+([0-9]).+([0-9])-@(beta|rc)*([0-9]) )
               echo 'validTag=true' >> $GITHUB_OUTPUT
@@ -80,7 +88,7 @@ jobs:
               echo 'draft=true' >> $GITHUB_OUTPUT
               echo 'assetScope=all' >> $GITHUB_OUTPUT
               echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
-              echo "releaseName=${PLUGIN_NAME} ${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+              echo "releaseName=${PLUGIN_NAME} - ${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
               ;;
             *) echo 'validTag=false' >> $GITHUB_OUTPUT ;;
           esac
@@ -124,6 +132,8 @@ jobs:
 
       - name: Generate Checksums 🪪
         if: fromJSON(steps.check.outputs.validTag)
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
           : Generate Checksums 🪪
           if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
@@ -146,13 +156,26 @@ jobs:
 
           {
             if [[ '${{ steps.check.outputs.assetScope }}' == 'windows' ]]; then
-              echo 'Automated development build from the latest commit on `main`.'
+              echo "Automated development build from the latest commit on \`${GITHUB_REF_NAME}\`."
               echo
               echo "Commit: \`${GITHUB_SHA}\`"
               echo
               echo '> Development build: test before relying on it for important recordings.'
               echo
             fi
+
+            echo '### Changes / fixes'
+            if [[ "${BEFORE_SHA}" =~ ^[0]+$ ]] || ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
+              git log -1 --format='- %s' "${GITHUB_SHA}"
+            else
+              changes="$(git log --reverse --format='- %s' "${BEFORE_SHA}..${GITHUB_SHA}" | tail -n 8)"
+              if [[ "${changes}" ]]; then
+                echo "${changes}"
+              else
+                git log -1 --format='- %s' "${GITHUB_SHA}"
+              fi
+            fi
+            echo
             echo '### Checksums'
           } > ${{ github.workspace }}/CHECKSUMS.txt
 
