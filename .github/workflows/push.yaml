@@ -27,7 +27,18 @@ jobs:
 
   create-release:
     name: Create Release 🛫
-    if: github.ref_type == 'tag'
+    # Version tags create the normal draft release only after every platform
+    # succeeds. Every main-branch commit creates a uniquely tagged development
+    # pre-release when the build run contains Windows artifacts, even if an
+    # unfinished Linux/macOS port fails elsewhere in the reusable workflow.
+    if: >-
+      ${{
+        !cancelled() &&
+        (
+          (github.ref_type == 'tag' && needs.build-project.result == 'success') ||
+          github.ref_name == 'main'
+        )
+      }}
     runs-on: ubuntu-24.04
     needs: build-project
     defaults:
@@ -36,21 +47,40 @@ jobs:
     steps:
       - name: Check Release Tag ☑️
         id: check
+        env:
+          PLUGIN_NAME: ${{ needs.build-project.outputs.pluginName || 'OBS Replay Timeline' }}
         run: |
           : Check Release Tag ☑️
           if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
           shopt -s extglob
 
+          if [[ "${GITHUB_REF_TYPE}" == 'branch' && "${GITHUB_REF_NAME}" == 'main' ]]; then
+            short_hash="${GITHUB_SHA:0:9}"
+            echo 'validTag=true' >> $GITHUB_OUTPUT
+            echo 'prerelease=true' >> $GITHUB_OUTPUT
+            echo 'draft=false' >> $GITHUB_OUTPUT
+            echo 'assetScope=windows' >> $GITHUB_OUTPUT
+            echo "version=build-${GITHUB_RUN_NUMBER}-${short_hash}" >> $GITHUB_OUTPUT
+            echo "releaseName=${PLUGIN_NAME} Development Build #${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           case "${GITHUB_REF_NAME}" in
             +([0-9]).+([0-9]).+([0-9]) )
               echo 'validTag=true' >> $GITHUB_OUTPUT
               echo 'prerelease=false' >> $GITHUB_OUTPUT
+              echo 'draft=true' >> $GITHUB_OUTPUT
+              echo 'assetScope=all' >> $GITHUB_OUTPUT
               echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+              echo "releaseName=${PLUGIN_NAME} ${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
               ;;
             +([0-9]).+([0-9]).+([0-9])-@(beta|rc)*([0-9]) )
               echo 'validTag=true' >> $GITHUB_OUTPUT
               echo 'prerelease=true' >> $GITHUB_OUTPUT
+              echo 'draft=true' >> $GITHUB_OUTPUT
+              echo 'assetScope=all' >> $GITHUB_OUTPUT
               echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+              echo "releaseName=${PLUGIN_NAME} ${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
               ;;
             *) echo 'validTag=false' >> $GITHUB_OUTPUT ;;
           esac
@@ -71,12 +101,16 @@ jobs:
           root_dir="$(pwd)"
           commit_hash="${GITHUB_SHA:0:9}"
 
-          variants=(
-            'windows-x64;zip|exe'
-            'macos-universal;tar.xz|pkg'
-            'ubuntu-24.04-x86_64;tar.xz|deb|ddeb'
-            'sources;tar.xz'
-          )
+          if [[ '${{ steps.check.outputs.assetScope }}' == 'windows' ]]; then
+            variants=('windows-x64;zip|exe')
+          else
+            variants=(
+              'windows-x64;zip|exe'
+              'macos-universal;tar.xz|pkg'
+              'ubuntu-24.04-x86_64;tar.xz|deb|ddeb'
+              'sources;tar.xz'
+            )
+          fi
 
           for variant_data in "${variants[@]}"; do
             IFS=';' read -r variant suffix <<< "${variant_data}"
@@ -94,9 +128,35 @@ jobs:
           : Generate Checksums 🪪
           if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
           shopt -s extglob
+          shopt -s nullglob
 
-          echo "### Checksums" > ${{ github.workspace }}/CHECKSUMS.txt
-          for file in ${{ github.workspace }}/@(*.exe|*.deb|*.ddeb|*.pkg|*.tar.xz|*.zip); do
+          files=(${{ github.workspace }}/@(*.exe|*.deb|*.ddeb|*.pkg|*.tar.xz|*.zip))
+          if (( ${#files} == 0 )); then
+            echo 'No packaged artifacts were produced; refusing to create an empty release.' >&2
+            exit 1
+          fi
+
+          if [[ '${{ steps.check.outputs.assetScope }}' == 'windows' ]]; then
+            installers=(${{ github.workspace }}/*.exe)
+            if (( ${#installers} == 0 )); then
+              echo 'The Windows installer was not produced; refusing to create the development release.' >&2
+              exit 1
+            fi
+          fi
+
+          {
+            if [[ '${{ steps.check.outputs.assetScope }}' == 'windows' ]]; then
+              echo 'Automated development build from the latest commit on `main`.'
+              echo
+              echo "Commit: \`${GITHUB_SHA}\`"
+              echo
+              echo '> Development build: test before relying on it for important recordings.'
+              echo
+            fi
+            echo '### Checksums'
+          } > ${{ github.workspace }}/CHECKSUMS.txt
+
+          for file in "${files[@]}"; do
             echo "    ${file##*/}: $(sha256sum "${file}" | cut -d " " -f 1)" >> ${{ github.workspace }}/CHECKSUMS.txt
           done
 
@@ -105,10 +165,11 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@9d7c94cfd0a1f3ed45544c887983e9fa900f0564
         with:
-          draft: true
+          draft: ${{ fromJSON(steps.check.outputs.draft) }}
           prerelease: ${{ fromJSON(steps.check.outputs.prerelease) }}
           tag_name: ${{ steps.check.outputs.version }}
-          name: ${{ needs.build-project.outputs.pluginName }} ${{ steps.check.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.check.outputs.releaseName }}
           body_path: ${{ github.workspace }}/CHECKSUMS.txt
           files: |
             ${{ github.workspace }}/*.exe
