@@ -69,6 +69,11 @@ int main(int argc, char **argv)
 	expect(selectedCsv.size() == 2 && selectedCsv.front().recordingPath == QStringLiteral("C:/vídeo/final-1.mkv") &&
 		       selectedCsv.front().probeStatus == QStringLiteral("complete"),
 	       "split replay exports finalized paths and probe diagnostics");
+	expect(selectedCsv[0].runStartNs == 22'000 && selectedCsv[0].runEndNs == 30'000 &&
+		       selectedCsv[0].segmentStartNs == 22'000 && selectedCsv[0].segmentEndNs == 30'000 &&
+		       selectedCsv[1].runStartNs == 30'000 && selectedCsv[1].runEndNs == 42'000 &&
+		       selectedCsv[1].segmentStartNs == 0 && selectedCsv[1].segmentEndNs == 12'000,
+	       "split replay exports both run-global and file-local intervals");
 
 	const std::int64_t interrupted = repository.createSession(100'000, QStringLiteral("2026-08-26T01:00:00.000Z"));
 	expect(repository.createRequest(interrupted, 2, 0, -1, 100'100, QStringLiteral("Keep")) > 0,
@@ -80,6 +85,12 @@ int main(int argc, char **argv)
 	expect(!sessions.empty() && sessions.front().status == QStringLiteral("interrupted"),
 	       "recovery marks open session interrupted");
 	expect(repository.csvRows().size() == 2, "all-session CSV query includes every replay span");
+	expect(repository.setSetting(QStringLiteral("tag_names"), QStringLiteral("Funny\nKeep")),
+	       "settings persist before clearing sessions");
+	expect(repository.clearSessions(), "session metadata clears transactionally");
+	expect(repository.sessions().empty() && repository.csvRows().empty(), "clearing removes every session and replay");
+	expect(repository.setting(QStringLiteral("tag_names"), {}) == QStringLiteral("Funny\nKeep"),
+	       "clearing sessions preserves plugin settings");
 
 	std::cout << "repository tests passed\n";
 	return EXIT_SUCCESS;

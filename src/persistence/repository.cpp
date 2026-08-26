@@ -424,9 +424,9 @@ std::vector<CsvRow> Repository::csvRows(std::int64_t sessionId) const
 	std::vector<CsvRow> result;
 	Statement query(database_, R"sql(
 SELECT r.session_id,r.id,r.saved_utc,COALESCE(rr.ordinal,0),COALESCE(rs.ordinal,0),
-       COALESCE(s.run_start_ns,-1),COALESCE(s.run_end_ns,-1),r.tag,r.note,
-       COALESCE(r.duration_ns,-1),r.replay_path,COALESCE(s.recording_path,''),r.confidence,
-       r.probe_status,r.reason
+       COALESCE(s.run_start_ns,-1),COALESCE(s.run_end_ns,-1),
+       COALESCE(s.segment_start_ns,-1),COALESCE(s.segment_end_ns,-1),r.tag,r.note,
+       COALESCE(r.duration_ns,-1),r.replay_path,COALESCE(s.recording_path,''),r.confidence,r.probe_status,r.reason
 FROM replays r
 LEFT JOIN replay_recording_spans s ON s.replay_id=r.id
 LEFT JOIN recording_segments rs ON rs.id=s.segment_id
@@ -437,11 +437,22 @@ WHERE (?1=0 OR r.session_id=?1) ORDER BY r.saved_ns,r.id,s.id
 		return result;
 	while (query.step() == SQLITE_ROW) {
 		result.push_back({query.integer(0), query.integer(1), query.text(2), query.integer(3),
-				  query.integer(4), query.integer(5), query.integer(6), query.text(7), query.text(8),
-				  query.integer(9), query.text(10), query.text(11), query.text(12), query.text(13),
-				  query.text(14)});
+				  query.integer(4), query.integer(5), query.integer(6), query.integer(7),
+				  query.integer(8), query.text(9), query.text(10), query.integer(11), query.text(12),
+				  query.text(13), query.text(14), query.text(15), query.text(16)});
 	}
 	return result;
+}
+
+bool Repository::clearSessions()
+{
+	if (!execute("BEGIN IMMEDIATE;"))
+		return false;
+	Statement remove(database_, "DELETE FROM sessions");
+	if (succeeded(remove) && execute("COMMIT;"))
+		return true;
+	execute("ROLLBACK;");
+	return false;
 }
 
 bool Repository::updateReplay(std::int64_t replayId, const QString &tag, const QString &note)

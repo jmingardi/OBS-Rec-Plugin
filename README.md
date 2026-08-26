@@ -14,8 +14,10 @@ The first native MVP is implemented and builds on Windows x64. It includes the O
 2. Open **Settings → Hotkeys** and assign the `Replay Timeline: Save Replay — Funny/Kill/Bug/Keep` actions.
 3. Open **Docks → Replay Timeline**.
 4. Use the plugin hotkeys for precise request timestamps. Replays saved through OBS's built-in hotkey are still catalogued as `External`, with lower mapping confidence.
-5. Search sessions, edit tag/note cells, retry failed media probes, or export the selected session to CSV. Use
+5. Search replay rows, edit tag/note cells, retry failed media probes, or export the selected session to CSV. Use
    **Export all CSV** to combine every stored session.
+6. When Recording and Replay Buffer are stopped, use **Clear sessions…** to remove stored timeline metadata. The
+   confirmation explicitly preserves every replay and recording media file.
 
 Tag names can be changed from the dock. Slot IDs remain stable so existing OBS key assignments survive renamed tags.
 

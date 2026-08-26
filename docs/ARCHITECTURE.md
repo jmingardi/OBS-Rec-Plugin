@@ -127,10 +127,12 @@ Use a model/view table with a proxy filter rather than one widget per row. File 
 Export UTF-8 CSV with RFC 4180 quoting and stable columns:
 
 ```text
-session_id,replay_id,recording_run,recording_segment,recording_start,recording_end,tag,note,replay_duration,replay_path,recording_path,mapping_confidence
+session_id,replay_id,recording_run,recording_segment,run_start,run_end,segment_start,segment_end,tag,note,replay_duration,replay_path,recording_path,mapping_confidence
 ```
 
-A replay spanning multiple files produces one row per association span with the same replay ID. Replay-only entries produce one row with empty recording fields.
+A replay spanning multiple files produces one row per association span with the same replay ID. `run_start` and
+`run_end` locate that span on the cumulative recording-run timeline, while `segment_start` and `segment_end` are local
+to the physical file named by `recording_path`. Replay-only entries produce one row with empty recording fields.
 
 ## Compatibility and failure policy
 

@@ -71,6 +71,7 @@ private:
 	void unregisterHotkeys();
 	void refresh(std::int64_t preferredSession = 0);
 	void exportCsv(const QString &path, bool allSessions);
+	void clearSessions();
 
 	QPointer<ReplayTimelineDock> dock_;
 	Repository repository_;

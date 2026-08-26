@@ -11,6 +11,7 @@
 class QComboBox;
 class QLabel;
 class QPlainTextEdit;
+class QPushButton;
 class QSortFilterProxyModel;
 class QStandardItem;
 class QStandardItemModel;
@@ -27,6 +28,7 @@ public:
 		std::function<void(const QStringList &)> tagsConfigured;
 		std::function<void(std::int64_t)> retryProbe;
 		std::function<void()> refreshRequested;
+		std::function<void()> clearSessionsRequested;
 	};
 
 	explicit ReplayTimelineDock(QWidget *parent = nullptr);
@@ -46,6 +48,7 @@ private:
 	QLabel *replayStatus_ = nullptr;
 	QLabel *message_ = nullptr;
 	QComboBox *sessionSelector_ = nullptr;
+	QPushButton *clearSessionsButton_ = nullptr;
 	QStandardItemModel *replayModel_ = nullptr;
 	QSortFilterProxyModel *replayProxy_ = nullptr;
 	QTableView *replayTable_ = nullptr;

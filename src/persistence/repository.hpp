@@ -39,8 +39,10 @@ struct CsvRow {
 	QString savedUtc;
 	std::int64_t recordingRun = 0;
 	std::int64_t recordingSegment = 0;
-	std::int64_t recordingStartNs = -1;
-	std::int64_t recordingEndNs = -1;
+	std::int64_t runStartNs = -1;
+	std::int64_t runEndNs = -1;
+	std::int64_t segmentStartNs = -1;
+	std::int64_t segmentEndNs = -1;
 	QString tag;
 	QString note;
 	std::int64_t durationNs = -1;
@@ -100,6 +102,7 @@ public:
 	std::vector<SessionSummary> sessions() const;
 	std::vector<ReplayRow> replays(std::int64_t sessionId) const;
 	std::vector<CsvRow> csvRows(std::int64_t sessionId = 0) const;
+	bool clearSessions();
 	bool updateReplay(std::int64_t replayId, const QString &tag, const QString &note);
 	QString setting(const QString &key, const QString &fallback) const;
 	bool setSetting(const QString &key, const QString &value);

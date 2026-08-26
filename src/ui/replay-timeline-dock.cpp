@@ -12,6 +12,7 @@
 #include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -83,6 +84,7 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	auto *controls = new QHBoxLayout();
 	sessionSelector_ = new QComboBox(this);
 	sessionSelector_->setMinimumContentsLength(24);
+	clearSessionsButton_ = new QPushButton(text("ReplayTimeline.ClearSessions"), this);
 	auto *search = new QLineEdit(this);
 	search->setPlaceholderText(text("ReplayTimeline.SearchPlaceholder"));
 	auto *refresh = new QPushButton(text("ReplayTimeline.Refresh"), this);
@@ -92,13 +94,18 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	auto *exportAllButton = new QPushButton(text("ReplayTimeline.ExportAllCsv"), this);
 	controls->addWidget(new QLabel(text("ReplayTimeline.Session"), this));
 	controls->addWidget(sessionSelector_);
-	controls->addWidget(search, 1);
+	controls->addWidget(clearSessionsButton_);
 	controls->addWidget(refresh);
 	controls->addWidget(retryProbe);
 	controls->addWidget(configureTags);
-	controls->addWidget(exportButton);
-	controls->addWidget(exportAllButton);
+	controls->addStretch();
 	layout->addLayout(controls);
+
+	auto *searchAndExport = new QHBoxLayout();
+	searchAndExport->addWidget(search, 1);
+	searchAndExport->addWidget(exportButton);
+	searchAndExport->addWidget(exportAllButton);
+	layout->addLayout(searchAndExport);
 
 	replayModel_ = new QStandardItemModel(0, ColumnCount, this);
 	replayModel_->setHorizontalHeaderLabels(
@@ -143,6 +150,15 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	layout->addWidget(diagnostics_);
 
 	connect(clearButton, &QPushButton::clicked, diagnostics_, &QPlainTextEdit::clear);
+	connect(clearSessionsButton_, &QPushButton::clicked, this, [this]() {
+		if (!callbacks_.clearSessionsRequested)
+			return;
+		const QMessageBox::StandardButton choice = QMessageBox::warning(
+			this, text("ReplayTimeline.ClearSessionsTitle"), text("ReplayTimeline.ClearSessionsPrompt"),
+			QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
+		if (choice == QMessageBox::Yes)
+			callbacks_.clearSessionsRequested();
+	});
 	connect(search, &QLineEdit::textChanged, replayProxy_, &QSortFilterProxyModel::setFilterFixedString);
 	connect(sessionSelector_, &QComboBox::currentIndexChanged, this, [this](int index) {
 		if (index >= 0 && callbacks_.sessionSelected)
@@ -222,6 +238,10 @@ void ReplayTimelineDock::setOutputState(bool recordingActive, bool recordingPaus
 	recordingStatus_->setText(text(recordingKey));
 	replayStatus_->setText(
 		text(replayBufferActive ? "ReplayTimeline.ReplayActive" : "ReplayTimeline.ReplayInactive"));
+	const bool captureActive = recordingActive || replayBufferActive;
+	clearSessionsButton_->setEnabled(!captureActive);
+	clearSessionsButton_->setToolTip(
+		captureActive ? text("ReplayTimeline.ClearSessionsActive") : text("ReplayTimeline.ClearSessionsTooltip"));
 }
 
 void ReplayTimelineDock::setCallbacks(Callbacks callbacks)

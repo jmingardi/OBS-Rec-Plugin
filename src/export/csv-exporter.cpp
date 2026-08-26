@@ -27,9 +27,9 @@ QString timecode(std::int64_t nanoseconds)
 QByteArray createCsv(const std::vector<CsvRow> &rows)
 {
 	QString output =
-		QStringLiteral("session_id,replay_id,saved_utc,recording_run,recording_segment,recording_start,"
-			       "recording_end,tag,note,replay_duration,replay_path,recording_path,mapping_confidence,"
-			       "probe_status,mapping_reason\r\n");
+		QStringLiteral("session_id,replay_id,saved_utc,recording_run,recording_segment,run_start,run_end,"
+			       "segment_start,segment_end,tag,note,replay_duration,replay_path,recording_path,"
+			       "mapping_confidence,probe_status,mapping_reason\r\n");
 	for (const CsvRow &row : rows) {
 		output += QString::number(row.sessionId) + QLatin1Char(',') + QString::number(row.replayId) +
 			  QLatin1Char(',') + quote(row.savedUtc) + QLatin1Char(',');
@@ -38,8 +38,9 @@ QByteArray createCsv(const std::vector<CsvRow> &rows)
 		output += QLatin1Char(',');
 		if (row.recordingSegment > 0)
 			output += QString::number(row.recordingSegment);
-		output += QLatin1Char(',') + timecode(row.recordingStartNs) + QLatin1Char(',') +
-			  timecode(row.recordingEndNs) + QLatin1Char(',') + quote(row.tag) + QLatin1Char(',') +
+		output += QLatin1Char(',') + timecode(row.runStartNs) + QLatin1Char(',') + timecode(row.runEndNs) +
+			  QLatin1Char(',') + timecode(row.segmentStartNs) + QLatin1Char(',') +
+			  timecode(row.segmentEndNs) + QLatin1Char(',') + quote(row.tag) + QLatin1Char(',') +
 			  quote(row.note) + QLatin1Char(',') + timecode(row.durationNs) + QLatin1Char(',') +
 			  quote(row.replayPath) + QLatin1Char(',') + quote(row.recordingPath) + QLatin1Char(',') +
 			  quote(row.confidence) + QLatin1Char(',') + quote(row.probeStatus) + QLatin1Char(',') +

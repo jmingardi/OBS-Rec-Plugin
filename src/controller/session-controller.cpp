@@ -69,6 +69,7 @@ bool SessionController::start(const QString &databasePath, QString &error)
 			[this](const QStringList &tags) { configureTags(tags); },
 			[this](std::int64_t replayId) { retryProbe(replayId); },
 			[this]() { refresh(); },
+			[this]() { clearSessions(); },
 		});
 		dock_->setTagNames(tags_);
 	}
@@ -454,6 +455,27 @@ void SessionController::exportCsv(const QString &path, bool allSessions)
 	}
 	if (dock_)
 		dock_->showMessage(QStringLiteral("CSV exported to %1").arg(path));
+}
+
+void SessionController::clearSessions()
+{
+	recordingActive_ = obs_frontend_recording_active();
+	replayActive_ = obs_frontend_replay_buffer_active();
+	if (recordingActive_ || replayActive_ || activeSessionId_) {
+		if (dock_)
+			dock_->showMessage(
+				QStringLiteral("Stop Recording and Replay Buffer before clearing sessions."), true);
+		return;
+	}
+	if (!repository_.clearSessions()) {
+		if (dock_)
+			dock_->showMessage(repository_.lastError(), true);
+		return;
+	}
+	selectedSessionId_ = 0;
+	refresh();
+	if (dock_)
+		dock_->showMessage(QStringLiteral("All session metadata was cleared. Media files were not deleted."));
 }
 
 } // namespace replay_timeline
