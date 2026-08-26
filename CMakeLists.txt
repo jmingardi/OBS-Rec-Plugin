@@ -20,6 +20,12 @@ set_target_properties(replay-timeline-domain PROPERTIES CXX_EXTENSIONS OFF)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
 
+add_library(replay-timeline-paths STATIC src/media/replay-path-resolver.cpp src/media/replay-path-resolver.hpp)
+target_include_directories(replay-timeline-paths PUBLIC src)
+target_link_libraries(replay-timeline-paths PUBLIC Qt6::Core)
+target_compile_features(replay-timeline-paths PUBLIC cxx_std_17)
+set_target_properties(replay-timeline-paths PROPERTIES CXX_EXTENSIONS OFF POSITION_INDEPENDENT_CODE ON)
+
 add_library(replay-timeline-storage STATIC src/persistence/repository.cpp src/persistence/repository.hpp)
 target_include_directories(replay-timeline-storage PUBLIC src vendor/sqlite)
 target_link_libraries(replay-timeline-storage PUBLIC replay-timeline-domain Qt6::Core PRIVATE sqlite3)
@@ -47,7 +53,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::Core Qt6::Widgets)
 find_package(FFmpeg 6.1 REQUIRED avformat avutil)
 target_link_libraries(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE replay-timeline-export FFmpeg::avformat FFmpeg::avutil
+  PRIVATE replay-timeline-export replay-timeline-paths FFmpeg::avformat FFmpeg::avutil
 )
 
 target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_17)
@@ -99,6 +105,12 @@ if(BUILD_TESTING)
   set_target_properties(csv-exporter-test PROPERTIES CXX_EXTENSIONS OFF)
   add_test(NAME csv-exporter COMMAND csv-exporter-test)
   set_tests_properties(csv-exporter PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+  add_executable(replay-path-resolver-test tests/replay-path-resolver-test.cpp)
+  target_link_libraries(replay-path-resolver-test PRIVATE replay-timeline-paths Qt6::Core)
+  set_target_properties(replay-path-resolver-test PROPERTIES CXX_EXTENSIONS OFF)
+  add_test(NAME replay-path-resolver COMMAND replay-path-resolver-test)
+  set_tests_properties(replay-path-resolver PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 endif()
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})

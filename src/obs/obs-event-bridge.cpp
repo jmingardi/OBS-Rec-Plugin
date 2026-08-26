@@ -57,6 +57,19 @@ QString takeFrontendString(char *value)
 	bfree(value);
 	return result;
 }
+
+QString outputFilePath(obs_output_t *output)
+{
+	if (!output)
+		return {};
+	obs_data_t *settings = obs_output_get_settings(output);
+	if (!settings)
+		return {};
+	const char *rawPath = obs_data_get_string(settings, "path");
+	const QString path = rawPath ? QString::fromUtf8(rawPath) : QString();
+	obs_data_release(settings);
+	return path;
+}
 } // namespace
 
 ObsEventBridge::ObsEventBridge(ReplayTimelineDock *dock, SessionController *controller)
@@ -121,7 +134,13 @@ void ObsEventBridge::handleFrontendEvent(obs_frontend_event event)
 	QString detail;
 	if (event == OBS_FRONTEND_EVENT_RECORDING_STARTED) {
 		attachRecordingOutput();
-		const QString path = takeFrontendString(obs_frontend_get_current_record_output_path());
+		QString path = outputFilePath(recordingOutput_);
+		if (path.isEmpty())
+			path = takeFrontendString(obs_frontend_get_current_record_output_path());
+		if (!path.isEmpty())
+			detail = QStringLiteral("path=%1").arg(path);
+	} else if (event == OBS_FRONTEND_EVENT_RECORDING_STOPPED) {
+		const QString path = takeFrontendString(obs_frontend_get_last_recording());
 		if (!path.isEmpty())
 			detail = QStringLiteral("path=%1").arg(path);
 	} else if (event == OBS_FRONTEND_EVENT_REPLAY_BUFFER_SAVED) {

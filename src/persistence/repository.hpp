@@ -36,6 +36,7 @@ struct ReplayRow {
 struct CsvRow {
 	std::int64_t sessionId = 0;
 	std::int64_t replayId = 0;
+	QString savedUtc;
 	std::int64_t recordingRun = 0;
 	std::int64_t recordingSegment = 0;
 	std::int64_t recordingStartNs = -1;
@@ -46,6 +47,8 @@ struct CsvRow {
 	QString replayPath;
 	QString recordingPath;
 	QString confidence;
+	QString probeStatus;
+	QString reason;
 };
 
 struct PendingRequest {
@@ -78,6 +81,7 @@ public:
 	std::int64_t createSegment(std::int64_t runId, int ordinal, const QString &path, std::int64_t mediaStartNs,
 				   std::int64_t startedNs);
 	bool closeSegment(std::int64_t segmentId, std::int64_t mediaEndNs, std::int64_t endedNs);
+	bool updateSegmentPath(std::int64_t segmentId, const QString &path);
 	std::int64_t createPause(std::int64_t runId, std::int64_t startedNs);
 	bool closePause(std::int64_t pauseId, std::int64_t endedNs);
 	std::int64_t createRequest(std::int64_t sessionId, int generation, std::int64_t runId,
@@ -85,7 +89,9 @@ public:
 	std::optional<PendingRequest> resolveOldestPending(int generation, std::int64_t savedNs);
 	std::int64_t createReplay(std::int64_t sessionId, const std::optional<PendingRequest> &request,
 				  std::int64_t savedNs, const QString &savedUtc, const QString &path);
-	bool replayProbeTarget(std::int64_t replayId, QString &path, std::optional<PendingRequest> &request) const;
+	bool replayProbeTarget(std::int64_t replayId, QString &path, QString &savedUtc, std::int64_t &savedNs,
+			       std::optional<PendingRequest> &request) const;
+	bool updateReplayPath(std::int64_t replayId, const QString &path);
 	bool completeProbe(std::int64_t replayId, std::int64_t durationNs, const QString &probeStatus,
 			   const QString &confidence, const QString &reason,
 			   const std::vector<domain::AssociationSpan> &spans);
@@ -93,7 +99,7 @@ public:
 
 	std::vector<SessionSummary> sessions() const;
 	std::vector<ReplayRow> replays(std::int64_t sessionId) const;
-	std::vector<CsvRow> csvRows(std::int64_t sessionId) const;
+	std::vector<CsvRow> csvRows(std::int64_t sessionId = 0) const;
 	bool updateReplay(std::int64_t replayId, const QString &tag, const QString &note);
 	QString setting(const QString &key, const QString &fallback) const;
 	bool setSetting(const QString &key, const QString &value);

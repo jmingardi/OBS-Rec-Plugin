@@ -87,6 +87,7 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	auto *retryProbe = new QPushButton(text("ReplayTimeline.RetryProbe"), this);
 	auto *configureTags = new QPushButton(text("ReplayTimeline.ConfigureTags"), this);
 	auto *exportButton = new QPushButton(text("ReplayTimeline.ExportCsv"), this);
+	auto *exportAllButton = new QPushButton(text("ReplayTimeline.ExportAllCsv"), this);
 	controls->addWidget(new QLabel(text("ReplayTimeline.Session"), this));
 	controls->addWidget(sessionSelector_);
 	controls->addWidget(search, 1);
@@ -94,6 +95,7 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	controls->addWidget(retryProbe);
 	controls->addWidget(configureTags);
 	controls->addWidget(exportButton);
+	controls->addWidget(exportAllButton);
 	layout->addLayout(controls);
 
 	replayModel_ = new QStandardItemModel(0, ColumnCount, this);
@@ -160,15 +162,19 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 		if (QStandardItem *entry = replayModel_->item(sourceRow, TimestampColumn))
 			callbacks_.retryProbe(entry->data(Qt::UserRole).toLongLong());
 	});
-	connect(exportButton, &QPushButton::clicked, this, [this]() {
+	auto exportCsv = [this](bool allSessions) {
 		if (!callbacks_.exportCsv)
 			return;
-		const QString path = QFileDialog::getSaveFileName(this, text("ReplayTimeline.ExportCsv"),
-								  QStringLiteral("replay-markers.csv"),
+		const QString title = text(allSessions ? "ReplayTimeline.ExportAllCsv" : "ReplayTimeline.ExportCsv");
+		const QString defaultName = allSessions ? QStringLiteral("replay-markers-all-sessions.csv")
+							    : QStringLiteral("replay-markers.csv");
+		const QString path = QFileDialog::getSaveFileName(this, title, defaultName,
 								  QStringLiteral("CSV (*.csv)"));
 		if (!path.isEmpty())
-			callbacks_.exportCsv(path);
-	});
+			callbacks_.exportCsv(path, allSessions);
+	};
+	connect(exportButton, &QPushButton::clicked, this, [exportCsv]() { exportCsv(false); });
+	connect(exportAllButton, &QPushButton::clicked, this, [exportCsv]() { exportCsv(true); });
 	connect(configureTags, &QPushButton::clicked, this, [this]() {
 		bool accepted = false;
 		const QString value = QInputDialog::getText(this, text("ReplayTimeline.ConfigureTags"),

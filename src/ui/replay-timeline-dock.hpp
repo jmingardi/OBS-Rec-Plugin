@@ -23,7 +23,7 @@ public:
 	struct Callbacks {
 		std::function<void(std::int64_t)> sessionSelected;
 		std::function<void(std::int64_t, const QString &, const QString &)> replayEdited;
-		std::function<void(const QString &)> exportCsv;
+		std::function<void(const QString &, bool)> exportCsv;
 		std::function<void(const QStringList &)> tagsConfigured;
 		std::function<void(std::int64_t)> retryProbe;
 		std::function<void()> refreshRequested;

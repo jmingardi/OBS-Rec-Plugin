@@ -229,6 +229,22 @@ bool Repository::closeSegment(std::int64_t segmentId, std::int64_t mediaEndNs, s
 	       statement.bind(3, segmentId) && succeeded(statement);
 }
 
+bool Repository::updateSegmentPath(std::int64_t segmentId, const QString &path)
+{
+	if (path.isEmpty())
+		return false;
+	if (!execute("BEGIN IMMEDIATE;"))
+		return false;
+	Statement segment(database_, "UPDATE recording_segments SET path=?1 WHERE id=?2");
+	bool okay = segment.valid() && segment.bind(1, path) && segment.bind(2, segmentId) && succeeded(segment);
+	Statement spans(database_, "UPDATE replay_recording_spans SET recording_path=?1 WHERE segment_id=?2");
+	okay = okay && spans.valid() && spans.bind(1, path) && spans.bind(2, segmentId) && succeeded(spans);
+	if (okay)
+		return execute("COMMIT;");
+	execute("ROLLBACK;");
+	return false;
+}
+
 std::int64_t Repository::createPause(std::int64_t runId, std::int64_t startedNs)
 {
 	Statement statement(database_, "INSERT INTO recording_pauses(run_id,started_ns) VALUES(?1,?2)");
@@ -299,22 +315,31 @@ std::int64_t Repository::createReplay(std::int64_t sessionId, const std::optiona
 	return lastInsertId();
 }
 
-bool Repository::replayProbeTarget(std::int64_t replayId, QString &path, std::optional<PendingRequest> &request) const
+bool Repository::replayProbeTarget(std::int64_t replayId, QString &path, QString &savedUtc, std::int64_t &savedNs,
+				   std::optional<PendingRequest> &request) const
 {
 	Statement query(database_, R"sql(
-SELECT r.replay_path,q.id,COALESCE(q.run_id,0),COALESCE(q.recording_end_ns,-1),
+SELECT r.replay_path,r.saved_utc,r.saved_ns,q.id,COALESCE(q.run_id,0),COALESCE(q.recording_end_ns,-1),
        COALESCE(q.requested_ns,0),COALESCE(q.tag,'')
 FROM replays r LEFT JOIN replay_requests q ON q.id=r.request_id WHERE r.id=?1
 )sql");
 	if (!query.valid() || !query.bind(1, replayId) || query.step() != SQLITE_ROW)
 		return false;
 	path = query.text(0);
-	if (query.isNull(1))
+	savedUtc = query.text(1);
+	savedNs = query.integer(2);
+	if (query.isNull(3))
 		request.reset();
 	else
-		request = PendingRequest{query.integer(1), query.integer(2), query.integer(3), query.integer(4),
-					 query.text(5)};
+		request = PendingRequest{query.integer(3), query.integer(4), query.integer(5), query.integer(6),
+					 query.text(7)};
 	return true;
+}
+
+bool Repository::updateReplayPath(std::int64_t replayId, const QString &path)
+{
+	Statement statement(database_, "UPDATE replays SET replay_path=?1 WHERE id=?2");
+	return statement.valid() && statement.bind(1, path) && statement.bind(2, replayId) && succeeded(statement);
 }
 
 bool Repository::completeProbe(std::int64_t replayId, std::int64_t durationNs, const QString &probeStatus,
@@ -398,21 +423,23 @@ std::vector<CsvRow> Repository::csvRows(std::int64_t sessionId) const
 {
 	std::vector<CsvRow> result;
 	Statement query(database_, R"sql(
-SELECT r.session_id,r.id,COALESCE(rr.ordinal,0),COALESCE(rs.ordinal,0),
+SELECT r.session_id,r.id,r.saved_utc,COALESCE(rr.ordinal,0),COALESCE(rs.ordinal,0),
        COALESCE(s.run_start_ns,-1),COALESCE(s.run_end_ns,-1),r.tag,r.note,
-       COALESCE(r.duration_ns,-1),r.replay_path,COALESCE(s.recording_path,''),r.confidence
+       COALESCE(r.duration_ns,-1),r.replay_path,COALESCE(s.recording_path,''),r.confidence,
+       r.probe_status,r.reason
 FROM replays r
 LEFT JOIN replay_recording_spans s ON s.replay_id=r.id
 LEFT JOIN recording_segments rs ON rs.id=s.segment_id
 LEFT JOIN recording_runs rr ON rr.id=rs.run_id
-WHERE r.session_id=?1 ORDER BY r.saved_ns,r.id,s.id
+WHERE (?1=0 OR r.session_id=?1) ORDER BY r.saved_ns,r.id,s.id
 )sql");
 	if (!query.valid() || !query.bind(1, sessionId))
 		return result;
 	while (query.step() == SQLITE_ROW) {
-		result.push_back({query.integer(0), query.integer(1), query.integer(2), query.integer(3),
-				  query.integer(4), query.integer(5), query.text(6), query.text(7), query.integer(8),
-				  query.text(9), query.text(10), query.text(11)});
+		result.push_back({query.integer(0), query.integer(1), query.text(2), query.integer(3),
+				  query.integer(4), query.integer(5), query.integer(6), query.text(7), query.text(8),
+				  query.integer(9), query.text(10), query.text(11), query.text(12), query.text(13),
+				  query.text(14)});
 	}
 	return result;
 }

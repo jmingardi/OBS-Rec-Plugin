@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <QObject>
+#include <QDateTime>
 #include <QPointer>
 #include <QStringList>
 
@@ -51,23 +52,25 @@ private:
 	void handleObsEvent(const QString &eventName, const QString &detail, std::int64_t monotonicNanoseconds);
 	void requestReplay(const QString &tag, std::int64_t requestedNs);
 	void beginRecording(std::int64_t now, const QString &path);
-	void endRecording(std::int64_t now);
+	void endRecording(std::int64_t now, const QString &finalPath);
 	void beginPause(std::int64_t now);
 	void endPause(std::int64_t now);
 	void splitRecording(std::int64_t now, const QString &path);
 	std::int64_t currentMediaTime(std::int64_t now) const;
 	void ensureSession(std::int64_t now);
 	void closeSessionIfIdle(std::int64_t now);
-	void startProbe(std::int64_t replayId, const QString &path, std::optional<PendingRequest> request);
+	void startProbe(std::int64_t replayId, const QString &path, const QString &savedUtc, std::int64_t savedNs,
+			std::optional<PendingRequest> request);
 	void retryProbe(std::int64_t replayId);
 	void finishProbe(std::int64_t replayId, const std::optional<PendingRequest> &request, std::int64_t durationNs,
-			 const QString &error);
+			 const QString &error, const QString &resolvedPath, const QString &resolutionDetail,
+			 const QDateTime &expectedRecordingStartedUtc);
 	void loadTags();
 	void configureTags(const QStringList &tags);
 	void registerHotkeys();
 	void unregisterHotkeys();
 	void refresh(std::int64_t preferredSession = 0);
-	void exportCsv(const QString &path);
+	void exportCsv(const QString &path, bool allSessions);
 
 	QPointer<ReplayTimelineDock> dock_;
 	Repository repository_;

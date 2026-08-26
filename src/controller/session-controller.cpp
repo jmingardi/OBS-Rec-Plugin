@@ -2,12 +2,15 @@
 
 #include "export/csv-exporter.hpp"
 #include "media/media-probe.hpp"
+#include "media/replay-path-resolver.hpp"
 #include "ui/replay-timeline-dock.hpp"
 
 #include <algorithm>
 
 #include <QDateTime>
+#include <QFileInfo>
 #include <QMetaObject>
+#include <QThread>
 #include <QThreadPool>
 
 #include <obs-frontend-api.h>
@@ -62,7 +65,7 @@ bool SessionController::start(const QString &databasePath, QString &error)
 				if (!repository_.updateReplay(replayId, tag, note) && dock_)
 					dock_->showMessage(repository_.lastError(), true);
 			},
-			[this](const QString &path) { exportCsv(path); },
+			[this](const QString &path, bool allSessions) { exportCsv(path, allSessions); },
 			[this](const QStringList &tags) { configureTags(tags); },
 			[this](std::int64_t replayId) { retryProbe(replayId); },
 			[this]() { refresh(); },
@@ -148,7 +151,7 @@ void SessionController::handleObsEvent(const QString &eventName, const QString &
 	} else if (eventName == QStringLiteral("RECORDING_FILE_CHANGED")) {
 		splitRecording(now, detailValue(detail));
 	} else if (eventName == QStringLiteral("RECORDING_STOPPED")) {
-		endRecording(now);
+		endRecording(now, detailValue(detail));
 		recordingActive_ = false;
 		closeSessionIfIdle(now);
 	} else if (eventName == QStringLiteral("REPLAY_BUFFER_STARTED")) {
@@ -162,9 +165,10 @@ void SessionController::handleObsEvent(const QString &eventName, const QString &
 		ensureSession(now);
 		const QString path = detailValue(detail);
 		const std::optional<PendingRequest> request = repository_.resolveOldestPending(replayGeneration_, now);
-		const std::int64_t replayId = repository_.createReplay(activeSessionId_, request, now, utcNow(), path);
+		const QString savedUtc = utcNow();
+		const std::int64_t replayId = repository_.createReplay(activeSessionId_, request, now, savedUtc, path);
 		if (replayId)
-			startProbe(replayId, path, request);
+			startProbe(replayId, path, savedUtc, now, request);
 		refresh(activeSessionId_);
 		closeSessionIfIdle(now);
 	}
@@ -207,14 +211,17 @@ void SessionController::beginRecording(std::int64_t now, const QString &path)
 	activeRun_ = std::move(run);
 }
 
-void SessionController::endRecording(std::int64_t now)
+void SessionController::endRecording(std::int64_t now, const QString &finalPath)
 {
 	if (!activeRun_)
 		return;
 	endPause(now);
 	const std::int64_t mediaEnd = currentMediaTime(now);
-	if (activeRun_->segmentId)
+	if (activeRun_->segmentId) {
+		if (!finalPath.isEmpty() && finalPath != QStringLiteral("<unavailable>"))
+			repository_.updateSegmentPath(activeRun_->segmentId, finalPath);
 		repository_.closeSegment(activeRun_->segmentId, mediaEnd, now);
+	}
 	repository_.closeRecordingRun(activeRun_->id, now);
 	activeRun_.reset();
 }
@@ -279,18 +286,42 @@ void SessionController::closeSessionIfIdle(std::int64_t now)
 	refresh(selectedSessionId_);
 }
 
-void SessionController::startProbe(std::int64_t replayId, const QString &path, std::optional<PendingRequest> request)
+void SessionController::startProbe(std::int64_t replayId, const QString &path, const QString &savedUtc,
+				   std::int64_t savedNs,
+				   std::optional<PendingRequest> request)
 {
 	QPointer<SessionController> self(this);
-	QThreadPool::globalInstance()->start([self, replayId, path, request = std::move(request)]() {
-		const MediaProbeResult result = probeMediaDuration(path);
+	QThreadPool::globalInstance()->start([self, replayId, path, savedUtc, savedNs, request = std::move(request)]() {
+		ReplayPathResolution resolution;
+		MediaProbeResult result;
+		const QDateTime saved = QDateTime::fromString(savedUtc, Qt::ISODateWithMs);
+		QDateTime expectedRecordingStartedUtc;
+		if (request && request->recordingEndNs >= 0 && saved.isValid()) {
+			const std::int64_t saveLatencyNs = std::max<std::int64_t>(0, savedNs - request->requestedNs);
+			expectedRecordingStartedUtc =
+				saved.addMSecs(-(request->recordingEndNs + saveLatencyNs) / 1'000'000);
+		}
+		for (int attempt = 0; attempt < 6; ++attempt) {
+			resolution = resolveReplayPath(path, saved);
+			if (resolution.found) {
+				result = probeMediaDuration(resolution.path);
+				if (result.succeeded())
+					break;
+			} else {
+				result = {-1, resolution.detail};
+			}
+			if (attempt < 5)
+				QThread::msleep(400);
+		}
 		if (!self)
 			return;
 		QMetaObject::invokeMethod(
 			self,
-			[self, replayId, request, result]() {
+			[self, replayId, request, result, resolution, expectedRecordingStartedUtc]() {
 				if (self)
-					self->finishProbe(replayId, request, result.durationNs, result.error);
+					self->finishProbe(replayId, request, result.durationNs, result.error,
+							  resolution.path, resolution.detail,
+							  expectedRecordingStartedUtc);
 			},
 			Qt::QueuedConnection);
 	});
@@ -299,20 +330,25 @@ void SessionController::startProbe(std::int64_t replayId, const QString &path, s
 void SessionController::retryProbe(std::int64_t replayId)
 {
 	QString path;
+	QString savedUtc;
+	std::int64_t savedNs = 0;
 	std::optional<PendingRequest> request;
-	if (!repository_.replayProbeTarget(replayId, path, request)) {
+	if (!repository_.replayProbeTarget(replayId, path, savedUtc, savedNs, request)) {
 		if (dock_)
 			dock_->showMessage(QStringLiteral("Unable to reload replay metadata for probing."), true);
 		return;
 	}
-	startProbe(replayId, path, request);
+	startProbe(replayId, path, savedUtc, savedNs, request);
 	if (dock_)
 		dock_->showMessage(QStringLiteral("Retrying media duration probe…"));
 }
 
 void SessionController::finishProbe(std::int64_t replayId, const std::optional<PendingRequest> &request,
-				    std::int64_t durationNs, const QString &error)
+				    std::int64_t durationNs, const QString &error, const QString &resolvedPath,
+				    const QString &resolutionDetail, const QDateTime &expectedRecordingStartedUtc)
 {
+	if (!resolvedPath.isEmpty())
+		repository_.updateReplayPath(replayId, resolvedPath);
 	std::vector<domain::AssociationSpan> spans;
 	QString probeStatus = QStringLiteral("failed");
 	QString confidence = request ? QStringLiteral("unmapped") : QStringLiteral("low");
@@ -320,7 +356,20 @@ void SessionController::finishProbe(std::int64_t replayId, const std::optional<P
 	if (durationNs > 0) {
 		probeStatus = QStringLiteral("complete");
 		if (request && request->runId && request->recordingEndNs >= 0) {
-			const auto segments = repository_.segmentsForRun(request->runId, request->recordingEndNs);
+			auto segments = repository_.segmentsForRun(request->runId, request->recordingEndNs);
+			for (domain::RecordingSegment &segment : segments) {
+				const QString storedPath = QString::fromStdString(segment.path);
+				if (QFileInfo(storedPath).isFile())
+					continue;
+				const QDateTime expectedSegmentStart = expectedRecordingStartedUtc.isValid()
+								       ? expectedRecordingStartedUtc.addMSecs(
+									 segment.mediaStart / 1'000'000)
+								       : QDateTime();
+				const ReplayPathResolution recording =
+					resolveRecordingPath(storedPath, expectedSegmentStart);
+				if (recording.found && repository_.updateSegmentPath(segment.id, recording.path))
+					segment.path = recording.path.toStdString();
+			}
 			spans = domain::TimelineMapper::mapReplay(request->recordingEndNs, durationNs, segments);
 			if (!spans.empty()) {
 				confidence = QStringLiteral("approximate");
@@ -333,6 +382,8 @@ void SessionController::finishProbe(std::int64_t replayId, const std::optional<P
 		} else {
 			reason = QStringLiteral("native/external save has no precise request timestamp");
 		}
+		if (!resolutionDetail.isEmpty())
+			reason += QStringLiteral("; ") + resolutionDetail;
 	}
 	repository_.completeProbe(replayId, durationNs, probeStatus, confidence, reason, spans);
 	refresh();
@@ -393,10 +444,10 @@ void SessionController::refresh(std::int64_t preferredSession)
 	dock_->setReplayRows(selectedSessionId_ ? repository_.replays(selectedSessionId_) : std::vector<ReplayRow>{});
 }
 
-void SessionController::exportCsv(const QString &path)
+void SessionController::exportCsv(const QString &path, bool allSessions)
 {
 	QString error;
-	if (!writeCsv(path, repository_.csvRows(selectedSessionId_), error)) {
+	if (!writeCsv(path, repository_.csvRows(allSessions ? 0 : selectedSessionId_), error)) {
 		if (dock_)
 			dock_->showMessage(error, true);
 		return;

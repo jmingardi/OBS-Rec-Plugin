@@ -14,7 +14,8 @@ The first native MVP is implemented and builds on Windows x64. It includes the O
 2. Open **Settings → Hotkeys** and assign the `Replay Timeline: Save Replay — Funny/Kill/Bug/Keep` actions.
 3. Open **Docks → Replay Timeline**.
 4. Use the plugin hotkeys for precise request timestamps. Replays saved through OBS's built-in hotkey are still catalogued as `External`, with lower mapping confidence.
-5. Search sessions, edit tag/note cells, retry failed media probes, or export the selected session to CSV.
+5. Search sessions, edit tag/note cells, retry failed media probes, or export the selected session to CSV. Use
+   **Export all CSV** to combine every stored session.
 
 Tag names can be changed from the dock. Slot IDs remain stable so existing OBS key assignments survive renamed tags.
 
@@ -53,11 +54,17 @@ Session metadata is stored in `replay-timeline.sqlite3` under OBS's module confi
 
 Media paths appear in the dock and database by design, but are only emitted to the OBS log at debug level. No media is copied, renamed, or uploaded.
 
+If another application immediately moves a saved replay into a game-specific subfolder, the plugin searches beneath
+the original OBS output directory for a unique save-time match and stores the relocated path. It also replaces OBS's
+initial directory-only recording path with the finalized file path. Older failed rows can be repaired with
+**Retry probe** after upgrading.
+
 ## Current limitations
 
 - Mapping is labeled `approximate` until Replay Buffer pause/shared-encoder behavior is validated across the supported OBS output matrix.
 - A recording that was already active when the plugin loaded is tracked only from plugin load onward.
 - Split detection uses the standard OBS output `file_changed(next_file)` signal; custom outputs without it cannot produce verified split boundaries.
+- Moved-file recovery intentionally refuses ambiguous matches; in that case leave the row failed instead of linking the wrong media file.
 - The plugin currently targets OBS Studio 32.2 or newer and Windows x64. macOS/Linux CI scaffolding is present but not yet runtime-validated.
 
 ## Documents

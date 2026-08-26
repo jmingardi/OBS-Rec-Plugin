@@ -41,6 +41,8 @@ int main(int argc, char **argv)
 	expect(first > 0 && second > 0, "recording segments persist");
 	expect(repository.closeSegment(first, 30'000, 30'100), "first split closes");
 	expect(repository.closeSegment(second, 90'000, 90'100), "second split closes");
+	expect(repository.updateSegmentPath(first, QStringLiteral("C:/vídeo/final-1.mkv")),
+	       "final recording path can replace an initial placeholder");
 
 	const std::int64_t requestId = repository.createRequest(session, 1, run, 42'000, 42'100, QStringLiteral("Bug"));
 	expect(requestId > 0, "tagged request persists");
@@ -63,7 +65,10 @@ int main(int argc, char **argv)
 	expect(rows.size() == 1 && rows.front().tag == QStringLiteral("Falha") &&
 		       rows.front().recordingStartNs == 22'000 && rows.front().recordingEndNs == 42'000,
 	       "review query reconstructs mapped replay");
-	expect(repository.csvRows(session).size() == 2, "split replay exports one row per association span");
+	const auto selectedCsv = repository.csvRows(session);
+	expect(selectedCsv.size() == 2 && selectedCsv.front().recordingPath == QStringLiteral("C:/vídeo/final-1.mkv") &&
+		       selectedCsv.front().probeStatus == QStringLiteral("complete"),
+	       "split replay exports finalized paths and probe diagnostics");
 
 	const std::int64_t interrupted = repository.createSession(100'000, QStringLiteral("2026-08-26T01:00:00.000Z"));
 	expect(repository.createRequest(interrupted, 2, 0, -1, 100'100, QStringLiteral("Keep")) > 0,
@@ -74,6 +79,7 @@ int main(int argc, char **argv)
 	const auto sessions = repository.sessions();
 	expect(!sessions.empty() && sessions.front().status == QStringLiteral("interrupted"),
 	       "recovery marks open session interrupted");
+	expect(repository.csvRows().size() == 2, "all-session CSV query includes every replay span");
 
 	std::cout << "repository tests passed\n";
 	return EXIT_SUCCESS;
