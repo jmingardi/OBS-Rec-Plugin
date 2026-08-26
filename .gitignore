@@ -1,0 +1,32 @@
+# Build outputs and downloaded OBS dependencies
+/.deps/
+/build*/
+/release/
+/install/
+/cmake-build-*/
+
+# CMake-generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+*.lock.json
+
+# IDE and operating-system files
+/.vs/
+/.vscode/
+/.idea/
+*.user
+*.suo
+*.VC.db
+.DS_Store
+Thumbs.db
+
+# Local test output
+/test-results/
+/coverage/
+*.sqlite
+*.sqlite3
+
+# CMake build-number cache used by the OBS template
+/cmake/.CMakeBuildNumber
