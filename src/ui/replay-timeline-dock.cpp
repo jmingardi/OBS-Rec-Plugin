@@ -9,6 +9,7 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QInputDialog>
+#include <QItemSelectionModel>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPlainTextEdit>
@@ -16,6 +17,7 @@
 #include <QSignalBlocker>
 #include <QSortFilterProxyModel>
 #include <QStandardItemModel>
+#include <QSet>
 #include <QTableView>
 #include <QVBoxLayout>
 
@@ -153,14 +155,19 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	connect(retryProbe, &QPushButton::clicked, this, [this]() {
 		if (!callbacks_.retryProbe)
 			return;
-		const QModelIndex current = replayTable_->currentIndex();
-		if (!current.isValid()) {
+		QSet<std::int64_t> replayIds;
+		const QModelIndexList selectedRows = replayTable_->selectionModel()->selectedRows(TimestampColumn);
+		for (const QModelIndex &proxyIndex : selectedRows) {
+			const int sourceRow = replayProxy_->mapToSource(proxyIndex).row();
+			if (QStandardItem *entry = replayModel_->item(sourceRow, TimestampColumn))
+				replayIds.insert(entry->data(Qt::UserRole).toLongLong());
+		}
+		if (replayIds.isEmpty()) {
 			showMessage(text("ReplayTimeline.SelectReplay"), true);
 			return;
 		}
-		const int sourceRow = replayProxy_->mapToSource(current).row();
-		if (QStandardItem *entry = replayModel_->item(sourceRow, TimestampColumn))
-			callbacks_.retryProbe(entry->data(Qt::UserRole).toLongLong());
+		for (std::int64_t replayId : replayIds)
+			callbacks_.retryProbe(replayId);
 	});
 	auto exportCsv = [this](bool allSessions) {
 		if (!callbacks_.exportCsv)

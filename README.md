@@ -57,7 +57,7 @@ Media paths appear in the dock and database by design, but are only emitted to t
 If another application immediately moves a saved replay into a game-specific subfolder, the plugin searches beneath
 the original OBS output directory for a unique save-time match and stores the relocated path. It also replaces OBS's
 initial directory-only recording path with the finalized file path. Older failed rows can be repaired with
-**Retry probe** after upgrading.
+**Retry probe** after upgrading. Multiple selected rows can be retried together.
 
 ## Current limitations
 
