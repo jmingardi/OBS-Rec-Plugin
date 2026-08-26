@@ -48,6 +48,17 @@ ctest --test-dir build_x64 -C RelWithDebInfo --output-on-failure
 The first configure downloads the pinned OBS sources and dependency bundles into `.deps/`.
 The development output is under `build_x64/rundir/RelWithDebInfo`. Release packaging is also available through the imported official template workflows.
 
+## Windows release packages
+
+The Windows GitHub Actions job produces both a manual-install ZIP and an Inno Setup installer. The installer defaults
+to OBS's recommended system plugin directory, `C:\ProgramData\obs-studio\plugins\obs-replay-timeline`, supports
+in-place upgrades and clean binary removal, and deliberately leaves session metadata in the OBS profile untouched.
+Select a different destination in the installer for a custom or portable OBS setup.
+
+Push a semantic version tag matching `buildspec.json` (for example, `0.1.1`) to run Release builds and create a draft
+GitHub release containing the Windows ZIP and installer. Installers are unsigned until Windows code-signing credentials
+are configured, so Windows SmartScreen may display a warning.
+
 ## Metadata and privacy
 
 Session metadata is stored in `replay-timeline.sqlite3` under OBS's module configuration directory. The database uses foreign keys, WAL mode, a busy timeout, versioned schema metadata, and restart recovery. Back it up alongside the OBS profile if the review history matters.
