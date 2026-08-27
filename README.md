@@ -8,9 +8,15 @@ The working product name is **OBS Replay Timeline**. The first release will prov
 
 The native MVP and live-validated 0.2 feature set are on `main`. Version 0.3 adds asynchronous cached replay thumbnails, an embedded seekable OBS Media Source preview, and persistent user-resizable replay-table columns. The plugin also includes tagged replay hotkeys, recording/pause/split tracking, FIFO request/save correlation, actual-duration and audio-track probing, split-aware timeline mapping, SQLite recovery, searchable/editable session review, ratings, application metadata, disk-space warnings, probe retry, and CSV export. The Windows x64 build and automated tests pass; the new 0.3 preview lifecycle still requires broader live OBS validation.
 
-## Support
+## Support development
 
-If OBS Replay Timeline saves you time, you can support its development on [Ko-fi](https://ko-fi.com/jmingardi).
+If OBS Replay Timeline saves you time, consider supporting its continued development.
+
+<p align="center">
+  <a href="https://ko-fi.com/jmingardi">
+    <img src="https://img.shields.io/badge/Support%20on%20Ko--fi-FF5E5B?style=for-the-badge&amp;logo=ko-fi&amp;logoColor=white" alt="Support OBS Replay Timeline on Ko-fi">
+  </a>
+</p>
 
 ## Use
 
