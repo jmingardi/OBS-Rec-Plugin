@@ -6,12 +6,16 @@
 #include <functional>
 #include <vector>
 
+#include <QList>
 #include <QWidget>
 
 class QComboBox;
+class QDialog;
 class QLabel;
 class QPlainTextEdit;
 class QPushButton;
+class QSettings;
+class QSplitter;
 class QSortFilterProxyModel;
 class QStandardItem;
 class QStandardItemModel;
@@ -19,6 +23,8 @@ class QTableView;
 class QTimer;
 
 namespace replay_timeline {
+
+class ReplayPreviewWidget;
 
 class ReplayTimelineDock final : public QWidget {
 public:
@@ -39,6 +45,9 @@ public:
 	void setCallbacks(Callbacks callbacks);
 	void setSessions(const std::vector<SessionSummary> &sessions, std::int64_t selectedSessionId);
 	void setReplayRows(const std::vector<ReplayRow> &rows);
+	void setReplayThumbnail(std::int64_t replayId, const QString &replayPath, const QString &thumbnailPath,
+				const QString &error);
+	void clearPreview();
 	void setTagNames(const QStringList &tags);
 	void showDiskRefreshActivity();
 	void setDiskStatus(const QString &message, bool warning);
@@ -46,7 +55,11 @@ public:
 
 private:
 	void handleItemChanged(QStandardItem *changedItem);
+	void setPreviewFocusMode(bool enabled);
 
+	QWidget *statusBar_ = nullptr;
+	QWidget *toolbar_ = nullptr;
+	QWidget *searchBar_ = nullptr;
 	QLabel *recordingStatus_ = nullptr;
 	QLabel *replayStatus_ = nullptr;
 	QLabel *diskStatus_ = nullptr;
@@ -58,10 +71,17 @@ private:
 	QStandardItemModel *replayModel_ = nullptr;
 	QSortFilterProxyModel *replayProxy_ = nullptr;
 	QTableView *replayTable_ = nullptr;
+	QSplitter *contentSplitter_ = nullptr;
+	ReplayPreviewWidget *preview_ = nullptr;
+	QPushButton *previewFocusButton_ = nullptr;
+	QDialog *diagnosticsDialog_ = nullptr;
 	QPlainTextEdit *diagnostics_ = nullptr;
+	QSettings *uiSettings_ = nullptr;
 	Callbacks callbacks_;
 	QStringList tagNames_;
+	QList<int> normalSplitterSizes_;
 	bool loadingRows_ = false;
+	bool previewFocusMode_ = false;
 };
 
 } // namespace replay_timeline

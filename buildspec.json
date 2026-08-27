@@ -38,7 +38,7 @@
     },
     "name": "obs-replay-timeline",
     "displayName": "OBS Replay Timeline",
-    "version": "0.2.1",
+    "version": "0.3.0",
     "author": "jmingardi",
     "website": "https://github.com/jmingardi/OBS-Rec-Plugin",
     "email": "jmingardi@users.noreply.github.com"

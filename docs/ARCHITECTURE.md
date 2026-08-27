@@ -53,22 +53,27 @@ OBS callbacks / output signals / hotkeys
           immutable domain events
                   v
            SessionController
-        /          |           \
-TimelineMapper  Repository   MediaProbeQueue
-        \          |           /
+        /          |             \
+TimelineMapper  Repository   Media/Thumbnail Queue
+        \          |             /
                   v
               DockModel
                   |
                   v
         Replay Timeline Qt Dock
+                  |
+          private OBS Media Source
 ```
 
 - **ObsEventBridge** owns OBS registrations and retained output references. It copies callback data and performs no storage or media work.
 - **SessionController** is the single writer of capture state and enforces the lifecycle state machine.
 - **TimelineMapper** is a pure C++ library with deterministic, table-driven unit tests and no OBS/Qt dependency.
 - **Repository** owns schema migrations and serialized transactions.
-- **MediaProbeQueue** probes duration in the background and posts results back as domain events.
+- **Media/Thumbnail Queue** probes duration and serially generates derived thumbnails in background workers, then posts
+  results back to the controller thread.
 - **DockModel** exposes session/replay rows, search, edits, and status without embedding OBS logic in widgets.
+- **ReplayPreviewWidget** owns one private OBS FFmpeg Media Source for the selected replay. It renders through an OBS
+  display, starts muted, uses monitor-only audio when unmuted, and releases the source on selection changes or shutdown.
 
 ## Persistence
 
@@ -124,8 +129,14 @@ The MVP dock contains:
 - actions to edit note/tag, open containing folder, copy path/timecode, retry probe, and export CSV
 - settings for tags and hotkey guidance
 - a destination-volume status that refreshes every 30 seconds and warns below 10 GiB free
+- cached thumbnails and a selected-replay player with play/pause, stop, seeking, and muted-by-default audio
 
 Use a model/view table with a proxy filter rather than one widget per row. File opening must require a user action and use Qt desktop services only from the UI thread.
+
+Thumbnails are derived artifacts stored outside SQLite under the plugin configuration directory. Their cache identity
+includes normalized media path, file size, and modification time. Generation is serialized to avoid decoder bursts, and
+invalid cache files are regenerated. Clearing sessions removes these derived artifacts but never replay or recording
+media. Embedded playback relies on OBS's own installed FFmpeg Media Source instead of adding another playback runtime.
 
 ## CSV contract
 
@@ -149,5 +160,7 @@ requested, not live lookups performed during export.
 - Missing split signal: continue with diagnostic status and no false split claim.
 - Duration probe failure: retain replay and allow retry.
 - Missing/moved media: retain metadata and display path status.
+- Thumbnail failure: show an unavailable placeholder while keeping all replay metadata and preview controls recoverable.
+- Preview failure: retain the row and thumbnail; never route preview audio into the recording/stream mix.
 - Database migration failure: open read-only/recovery UI where possible; do not overwrite the database.
 - All OBS object ownership and callback disconnection paths are RAII-wrapped and tested during plugin unload.

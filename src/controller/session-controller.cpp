@@ -3,6 +3,7 @@
 #include "export/csv-exporter.hpp"
 #include "media/media-probe.hpp"
 #include "media/replay-path-resolver.hpp"
+#include "media/thumbnail-generator.hpp"
 #include "obs/application-metadata.hpp"
 #include "ui/replay-timeline-dock.hpp"
 
@@ -10,7 +11,9 @@
 #include <limits>
 
 #include <QDateTime>
+#include <QDir>
 #include <QFileInfo>
+#include <QImage>
 #include <QMetaObject>
 #include <QSet>
 #include <QStorageInfo>
@@ -45,6 +48,8 @@ SessionController::SessionController(ReplayTimelineDock *dock) : QObject(dock), 
 	diskTimer_ = new QTimer(this);
 	diskTimer_->setInterval(30'000);
 	connect(diskTimer_, &QTimer::timeout, this, [this]() { updateDiskSpaceStatus(); });
+	thumbnailPool_ = new QThreadPool(this);
+	thumbnailPool_->setMaxThreadCount(1);
 }
 
 SessionController::~SessionController()
@@ -63,6 +68,8 @@ bool SessionController::start(const QString &databasePath, QString &error)
 	}
 
 	started_ = true;
+	thumbnailCacheDirectory_ =
+		QDir(QFileInfo(databasePath).absolutePath()).filePath(QStringLiteral("thumbnails"));
 	loadTags();
 	registerHotkeys();
 	if (dock_) {
@@ -109,6 +116,11 @@ void SessionController::stop()
 		return;
 	unregisterHotkeys();
 	diskTimer_->stop();
+	if (dock_)
+		dock_->clearPreview();
+	thumbnailPool_->clear();
+	thumbnailPool_->waitForDone();
+	thumbnailJobs_.clear();
 	frontendReady_ = false;
 	repository_.close();
 	started_ = false;
@@ -156,9 +168,12 @@ void SessionController::handleObsEvent(const QString &eventName, const QString &
 	if (eventName == QStringLiteral("OBS_FINISHED_LOADING")) {
 		frontendReady_ = true;
 		diskTimer_->start();
+		refresh();
 	} else if (eventName == QStringLiteral("OBS_EXIT")) {
 		frontendReady_ = false;
 		diskTimer_->stop();
+		if (dock_)
+			dock_->clearPreview();
 	} else if (eventName == QStringLiteral("RECORDING_STARTED")) {
 		recordingActive_ = true;
 		ensureSession(now);
@@ -467,7 +482,13 @@ void SessionController::refresh(std::int64_t preferredSession)
 	if (!selectedSessionId_ && !sessions.empty())
 		selectedSessionId_ = sessions.front().id;
 	dock_->setSessions(sessions, selectedSessionId_);
-	dock_->setReplayRows(selectedSessionId_ ? repository_.replays(selectedSessionId_) : std::vector<ReplayRow>{});
+	const std::vector<ReplayRow> rows =
+		selectedSessionId_ ? repository_.replays(selectedSessionId_) : std::vector<ReplayRow>{};
+	dock_->setReplayRows(rows);
+	if (frontendReady_) {
+		for (const ReplayRow &row : rows)
+			requestThumbnail(row);
+	}
 }
 
 void SessionController::exportCsv(const QString &path, bool allSessions)
@@ -497,6 +518,12 @@ void SessionController::clearSessions()
 			dock_->showMessage(repository_.lastError(), true);
 		return;
 	}
+	if (dock_)
+		dock_->clearPreview();
+	thumbnailPool_->clear();
+	thumbnailPool_->waitForDone();
+	thumbnailJobs_.clear();
+	clearThumbnailCache();
 	selectedSessionId_ = 0;
 	refresh();
 	if (dock_)
@@ -549,6 +576,51 @@ void SessionController::updateDiskSpaceStatus()
 	dock_->setDiskStatus(
 		QStringLiteral("Disk: %1 GiB free on %2%3").arg(availableGiB, 0, 'f', 1).arg(lowestRoot, suffix),
 		warning);
+}
+
+void SessionController::requestThumbnail(const ReplayRow &row)
+{
+	if (!dock_ || row.replayPath.isEmpty() || row.replayPath == QStringLiteral("<unavailable>")) {
+		if (dock_)
+			dock_->setReplayThumbnail(row.id, row.replayPath, {}, QStringLiteral("Replay path is unavailable."));
+		return;
+	}
+	const QString cachedPath = replayThumbnailCachePath(thumbnailCacheDirectory_, row.replayPath);
+	if (QFileInfo::exists(cachedPath) && !QImage(cachedPath).isNull()) {
+		dock_->setReplayThumbnail(row.id, row.replayPath, cachedPath, {});
+		return;
+	}
+	if (thumbnailJobs_.value(row.id) == row.replayPath)
+		return;
+	thumbnailJobs_.insert(row.id, row.replayPath);
+	const std::int64_t replayId = row.id;
+	const QString replayPath = row.replayPath;
+	const QString cacheDirectory = thumbnailCacheDirectory_;
+	const std::int64_t durationNs = row.durationNs;
+	QPointer<SessionController> self(this);
+	thumbnailPool_->start([self, replayId, replayPath, cacheDirectory, durationNs]() {
+		const ThumbnailResult result = generateReplayThumbnail(replayPath, cacheDirectory, durationNs);
+		if (!self)
+			return;
+		QMetaObject::invokeMethod(
+			self,
+			[self, replayId, replayPath, result]() {
+				if (!self || self->thumbnailJobs_.value(replayId) != replayPath)
+					return;
+				self->thumbnailJobs_.remove(replayId);
+				if (self->started_ && self->dock_)
+					self->dock_->setReplayThumbnail(replayId, replayPath, result.path, result.error);
+			},
+			Qt::QueuedConnection);
+	});
+}
+
+void SessionController::clearThumbnailCache()
+{
+	QDir cache(thumbnailCacheDirectory_);
+	const QStringList cachedFiles = cache.entryList({QStringLiteral("*.bmp")}, QDir::Files);
+	for (const QString &fileName : cachedFiles)
+		cache.remove(fileName);
 }
 
 } // namespace replay_timeline

@@ -6,7 +6,7 @@ The working product name is **OBS Replay Timeline**. The first release will prov
 
 ## Status
 
-The native MVP and the 0.2 feature set are implemented and build on Windows x64. The plugin includes the OBS dock, tagged replay hotkeys, recording/pause/split tracking, FIFO request/save correlation, actual-duration and audio-track probing, split-aware timeline mapping, SQLite recovery, searchable/editable session review, ratings, application metadata, disk-space warnings, probe retry, and CSV export. Automated tests pass; the 0.2 additions still require live OBS testing before they are merged from `test` to `main`.
+The native MVP and live-validated 0.2 feature set are on `main`. Version 0.3 development on `test` adds asynchronous cached replay thumbnails and an embedded, seekable OBS Media Source preview. The plugin also includes tagged replay hotkeys, recording/pause/split tracking, FIFO request/save correlation, actual-duration and audio-track probing, split-aware timeline mapping, SQLite recovery, searchable/editable session review, ratings, application metadata, disk-space warnings, probe retry, and CSV export. The Windows x64 build and automated tests pass; the new 0.3 preview lifecycle still requires live OBS validation.
 
 ## Use
 
@@ -17,8 +17,11 @@ The native MVP and the 0.2 feature set are implemented and build on Windows x64.
 5. Search replay rows, edit tag/note/rating cells, retry failed media probes, or export the selected session to CSV. A
    rating of `0` means unrated; valid ratings are whole numbers from `1` through `5`. Use
    **Export all CSV** to combine every stored session.
-6. When Recording and Replay Buffer are stopped, use **Clear sessions…** to remove stored timeline metadata. The
-   confirmation explicitly preserves every replay and recording media file.
+6. Select a replay row to load its embedded preview. Playback starts muted, and enabled preview audio is monitor-only
+   rather than part of the recording mix. Drag the wider divider to resize the table and preview; the chosen ratio is
+   remembered. **Expand preview** hides the surrounding dock controls, and `Esc` restores the full layout.
+7. When Recording and Replay Buffer are stopped, use **Clear sessions…** to remove stored timeline metadata and derived
+   thumbnails. The confirmation explicitly preserves every replay and recording media file.
 
 Tag names can be changed from the dock. Slot IDs remain stable so existing OBS key assignments survive renamed tags.
 
@@ -73,7 +76,7 @@ credentials are configured, so Windows SmartScreen may display a warning.
 
 ## Metadata and privacy
 
-Session metadata is stored in `replay-timeline.sqlite3` under OBS's module configuration directory. The database uses foreign keys, WAL mode, a busy timeout, versioned schema metadata, and restart recovery. Existing databases are migrated in place to add 0.2 fields; previous rows remain intact and show unrated/unknown/blank values until edited or reprobed. Back it up alongside the OBS profile if the review history matters.
+Session metadata is stored in `replay-timeline.sqlite3` under OBS's module configuration directory. The database uses foreign keys, WAL mode, a busy timeout, versioned schema metadata, and restart recovery. Existing databases are migrated in place to add 0.2 fields; previous rows remain intact and show unrated/unknown/blank values until edited or reprobed. Derived 0.3 thumbnails are cached as small BMP files in the adjacent `thumbnails` directory and can be regenerated from the original replays. Back up the database alongside the OBS profile if the review history matters.
 
 Media paths appear in the dock and database by design, but are only emitted to the OBS log at debug level. No media is copied, renamed, or uploaded.
 
@@ -93,6 +96,11 @@ initial directory-only recording path with the finalized file path. Older failed
 - Audio validation counts media streams but does not judge loudness, channel routing, or whether the expected OBS track
   was selected.
 - The 10 GiB disk threshold is fixed in 0.2 and reports the least-free relevant destination volume.
+- Thumbnail generation is serialized in a background worker. Embedded preview uses OBS's installed FFmpeg Media Source,
+  starts muted, and plays through **Settings → Audio → Advanced → Monitoring Device**. A stale or disconnected
+  monitoring endpoint produces silent preview audio. Preview rendering is currently runtime-supported on Windows;
+  Linux/macOS remains unvalidated. **Diagnostics…** opens lifecycle logs in a separate modeless window that can be
+  closed without clearing its contents.
 - The plugin currently targets OBS Studio 32.2 or newer and Windows x64. macOS/Linux CI scaffolding is present but not yet runtime-validated.
 
 ## Documents

@@ -2,12 +2,12 @@
 
 The phases are ordered to retire API and timing risk before investing in the full dock. A phase is complete only when its listed evidence exists.
 
-Current progress: the Windows x64 MVP implementation is present and its tested fixes are on `main`. Version 0.2 is in
-validation on `test`, adding ratings, a 10 GiB destination-volume warning, replay audio-stream validation, and
-best-effort Game/Window Capture application metadata. The official OBS 32.2.2/Qt scaffold configures successfully, the
-complete plugin builds with MSVC warnings treated as errors, and timeline, SQLite migration/Unicode, split-span, CSV,
-path-resolution, and real-media probe tests pass. Live OBS validation of the 0.2 additions and cross-platform runtime
-validation remain before a public release.
+Current progress: the Windows x64 MVP and live-validated 0.2 feature set are on `main`. Version 0.3 is in development on
+`test`, adding asynchronous derived thumbnails and an embedded OBS Media Source replay player with muted-by-default,
+monitor-only audio. The official OBS 32.2.2/Qt scaffold configures successfully, the complete plugin builds with MSVC
+warnings treated as errors, and timeline, SQLite migration/Unicode, split-span, CSV, path-resolution, real-media probe,
+and thumbnail generation/cache tests pass. Live OBS validation of the 0.3 preview and cross-platform runtime validation
+remain before another release.
 
 ## Phase 0 — Build and API feasibility
 
@@ -92,7 +92,6 @@ Exit evidence: packaged Windows x64 MVP plus CI builds for the supported matrix,
 
 ## Deferred until after MVP
 
-- thumbnails and embedded preview
 - Resolve/Premiere marker formats
 - duplicate detection
 - optional subclip extraction
@@ -108,3 +107,13 @@ Exit evidence: packaged Windows x64 MVP plus CI builds for the supported matrix,
 6. Confirm the displayed free space is for the recording/replay destination volume and the red warning appears below
    10 GiB.
 7. Upgrade an existing 0.1 installation and verify all earlier sessions, mappings, paths, notes, and tags remain intact.
+
+## Version 0.3 validation
+
+1. Confirm existing replay rows gain thumbnails without blocking OBS startup or dock interaction.
+2. Restart OBS and confirm cached thumbnails load without being regenerated.
+3. Select two different replays and confirm the embedded preview switches files and remains paused until Play is used.
+4. Verify play/pause, stop, seeking, end-of-file restart, and missing-media states.
+5. Confirm preview audio starts muted; after enabling it, confirm audio is monitor-only and absent from recordings/streams.
+6. Hide and reopen the dock, switch sessions, and exit OBS during playback; confirm playback stops and OBS exits cleanly.
+7. Clear sessions while outputs are stopped and confirm derived thumbnails are removed while replay media remains intact.
