@@ -71,7 +71,8 @@ Every push or merge to `main` builds a Windows ZIP and Inno Setup installer, the
 named `OBS Replay Timeline - X.Y.Z`, where `X.Y.Z` comes from `buildspec.json`. Its internal tag remains unique to the
 workflow run. The release description contains the complete curated bullet list from
 `docs/releases/<version>.md` plus SHA-256 checksums; publishing fails when those versioned notes are absent, empty, or
-not a bullet list. Pushes to `test` do not run this release workflow. A semantic version tag matching `buildspec.json` creates the normal draft
+not a bullet list. Development releases remain pre-releases and explicitly avoid GitHub's Latest pin so the release
+feed stays in publication order. Pushes to `test` do not run this release workflow. A semantic version tag matching `buildspec.json` creates the normal draft
 multi-platform release after all configured builds succeed. Installers are unsigned until Windows code-signing
 credentials are configured, so Windows SmartScreen may display a warning.
 
