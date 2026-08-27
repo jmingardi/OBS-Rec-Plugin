@@ -9,6 +9,7 @@
 
 #include <QObject>
 #include <QDateTime>
+#include <QHash>
 #include <QPointer>
 #include <QStringList>
 
@@ -16,6 +17,7 @@
 #include <obs-hotkey.h>
 
 class QTimer;
+class QThreadPool;
 
 namespace replay_timeline {
 
@@ -75,10 +77,15 @@ private:
 	void exportCsv(const QString &path, bool allSessions);
 	void clearSessions();
 	void updateDiskSpaceStatus();
+	void requestThumbnail(const ReplayRow &row);
+	void clearThumbnailCache();
 
 	QPointer<ReplayTimelineDock> dock_;
 	QTimer *diskTimer_ = nullptr;
+	QThreadPool *thumbnailPool_ = nullptr;
 	Repository repository_;
+	QHash<std::int64_t, QString> thumbnailJobs_;
+	QString thumbnailCacheDirectory_;
 	std::vector<HotkeyRegistration> hotkeys_;
 	QStringList tags_;
 	std::optional<ActiveRun> activeRun_;

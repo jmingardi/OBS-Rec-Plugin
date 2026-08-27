@@ -18,7 +18,7 @@ target_include_directories(replay-timeline-domain PUBLIC src)
 target_compile_features(replay-timeline-domain PUBLIC cxx_std_17)
 set_target_properties(replay-timeline-domain PROPERTIES CXX_EXTENSIONS OFF)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 
 add_library(replay-timeline-paths STATIC src/media/replay-path-resolver.cpp src/media/replay-path-resolver.hpp)
 target_include_directories(replay-timeline-paths PUBLIC src)
@@ -50,12 +50,12 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::obs-frontend-api)
 
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::Core Qt6::Widgets)
 
-find_package(FFmpeg 6.1 REQUIRED avformat avutil)
+find_package(FFmpeg 6.1 REQUIRED avcodec avformat avutil swscale)
 list(GET FFMPEG_SHARED_LIBRARIES 0 FFMPEG_RUNTIME_LIBRARY)
 get_filename_component(FFMPEG_RUNTIME_DIR "${FFMPEG_RUNTIME_LIBRARY}" DIRECTORY)
 target_link_libraries(
   ${CMAKE_PROJECT_NAME}
-  PRIVATE replay-timeline-export replay-timeline-paths FFmpeg::avformat FFmpeg::avutil
+  PRIVATE replay-timeline-export replay-timeline-paths FFmpeg::avcodec FFmpeg::avformat FFmpeg::avutil FFmpeg::swscale
 )
 
 target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_17)
@@ -80,6 +80,8 @@ target_sources(
     src/controller/session-controller.hpp
     src/media/media-probe.cpp
     src/media/media-probe.hpp
+    src/media/thumbnail-generator.cpp
+    src/media/thumbnail-generator.hpp
     src/obs/application-metadata.cpp
     src/obs/application-metadata.hpp
     src/obs/obs-event-bridge.cpp
@@ -89,6 +91,8 @@ target_sources(
     src/plugin/plugin-main.cpp
     src/ui/replay-timeline-dock.cpp
     src/ui/replay-timeline-dock.hpp
+    src/ui/replay-preview-widget.cpp
+    src/ui/replay-preview-widget.hpp
 )
 
 include(CTest)
@@ -123,6 +127,27 @@ if(BUILD_TESTING)
   add_test(NAME media-probe COMMAND media-probe-test)
   set_tests_properties(
     media-probe
+    PROPERTIES
+      ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:${FFMPEG_RUNTIME_DIR}"
+      TIMEOUT 15
+  )
+
+  add_executable(
+    thumbnail-generator-test
+    tests/thumbnail-generator-test.cpp
+    src/media/thumbnail-generator.cpp
+    src/media/thumbnail-generator.hpp
+  )
+  target_include_directories(thumbnail-generator-test PRIVATE src)
+  target_link_libraries(
+    thumbnail-generator-test
+    PRIVATE Qt6::Core Qt6::Gui FFmpeg::avcodec FFmpeg::avformat FFmpeg::avutil FFmpeg::swscale
+  )
+  set_target_properties(thumbnail-generator-test PROPERTIES CXX_EXTENSIONS OFF)
+  add_test(NAME thumbnail-generator COMMAND thumbnail-generator-test)
+  set_tests_properties(
+    thumbnail-generator
     PROPERTIES
       ENVIRONMENT_MODIFICATION
         "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:${FFMPEG_RUNTIME_DIR}"

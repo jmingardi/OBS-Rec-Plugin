@@ -7,8 +7,8 @@ src/
   controller/   capture-session state, tagged hotkeys, correlation, and probe queue
   domain/       pure pause-aware timeline mapping value types and algorithms
   persistence/  SQLite schema, recovery, queries, and transactions
-  media/        asynchronous FFmpeg/libavformat duration probing
-  ui/           dock, session selector, searchable replay model, and editing
+  media/        asynchronous FFmpeg probing and derived thumbnail generation
+  ui/           dock, searchable replay model, editing, and embedded OBS Media Source preview
   export/       deterministic UTF-8/RFC 4180 CSV writer
 ```
 

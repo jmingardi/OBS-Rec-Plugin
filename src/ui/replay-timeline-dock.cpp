@@ -1,34 +1,47 @@
 #include "replay-timeline-dock.hpp"
+#include "replay-preview-widget.hpp"
 
 #include <utility>
 
 #include <QComboBox>
 #include <QColor>
 #include <QDateTime>
+#include <QDialog>
+#include <QDir>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFont>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QIcon>
 #include <QInputDialog>
 #include <QItemSelectionModel>
+#include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPlainTextEdit>
+#include <QPixmap>
 #include <QPushButton>
+#include <QSettings>
+#include <QShortcut>
 #include <QSignalBlocker>
 #include <QSortFilterProxyModel>
 #include <QStandardItemModel>
 #include <QSet>
+#include <QSplitter>
 #include <QTableView>
 #include <QTimer>
 #include <QVBoxLayout>
 
 #include <obs-module.h>
+#include <util/bmem.h>
 
 namespace replay_timeline {
 namespace {
 enum Column {
+	ThumbnailColumn,
 	TimestampColumn,
 	RecordingTimeColumn,
 	TagColumn,
@@ -46,6 +59,16 @@ enum Column {
 QString text(const char *key)
 {
 	return QString::fromUtf8(obs_module_text(key));
+}
+
+QString uiSettingsPath()
+{
+	char *path = obs_module_config_path("ui.ini");
+	if (!path)
+		return {};
+	const QString result = QString::fromUtf8(path);
+	bfree(path);
+	return result;
 }
 
 QString timecode(std::int64_t nanoseconds)
@@ -77,7 +100,11 @@ QStandardItem *item(const QString &value, std::int64_t replayId, bool editable =
 ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 {
 	auto *layout = new QVBoxLayout(this);
-	auto *statusLayout = new QHBoxLayout();
+	layout->setContentsMargins(6, 6, 6, 6);
+	layout->setSpacing(6);
+	statusBar_ = new QWidget(this);
+	auto *statusLayout = new QHBoxLayout(statusBar_);
+	statusLayout->setContentsMargins(0, 0, 0, 0);
 	recordingStatus_ = new QLabel(this);
 	replayStatus_ = new QLabel(this);
 	diskStatus_ = new QLabel(this);
@@ -95,9 +122,11 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	statusLayout->addWidget(diskStatus_);
 	statusLayout->addWidget(diskRefreshActivity_);
 	statusLayout->addStretch();
-	layout->addLayout(statusLayout);
+	layout->addWidget(statusBar_);
 
-	auto *controls = new QHBoxLayout();
+	toolbar_ = new QWidget(this);
+	auto *controls = new QHBoxLayout(toolbar_);
+	controls->setContentsMargins(0, 0, 0, 0);
 	sessionSelector_ = new QComboBox(this);
 	sessionSelector_->setMinimumContentsLength(24);
 	clearSessionsButton_ = new QPushButton(text("ReplayTimeline.ClearSessions"), this);
@@ -106,6 +135,7 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	auto *refresh = new QPushButton(text("ReplayTimeline.Refresh"), this);
 	auto *retryProbe = new QPushButton(text("ReplayTimeline.RetryProbe"), this);
 	auto *configureTags = new QPushButton(text("ReplayTimeline.ConfigureTags"), this);
+	auto *diagnosticsButton = new QPushButton(text("ReplayTimeline.DiagnosticsButton"), this);
 	auto *exportButton = new QPushButton(text("ReplayTimeline.ExportCsv"), this);
 	auto *exportAllButton = new QPushButton(text("ReplayTimeline.ExportAllCsv"), this);
 	controls->addWidget(new QLabel(text("ReplayTimeline.Session"), this));
@@ -114,18 +144,22 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	controls->addWidget(refresh);
 	controls->addWidget(retryProbe);
 	controls->addWidget(configureTags);
+	controls->addWidget(diagnosticsButton);
 	controls->addStretch();
-	layout->addLayout(controls);
+	layout->addWidget(toolbar_);
 
-	auto *searchAndExport = new QHBoxLayout();
+	searchBar_ = new QWidget(this);
+	auto *searchAndExport = new QHBoxLayout(searchBar_);
+	searchAndExport->setContentsMargins(0, 0, 0, 0);
 	searchAndExport->addWidget(search, 1);
 	searchAndExport->addWidget(exportButton);
 	searchAndExport->addWidget(exportAllButton);
-	layout->addLayout(searchAndExport);
+	layout->addWidget(searchBar_);
 
 	replayModel_ = new QStandardItemModel(0, ColumnCount, this);
 	replayModel_->setHorizontalHeaderLabels(
-		{text("ReplayTimeline.Timestamp"), text("ReplayTimeline.RecordingTime"), text("ReplayTimeline.Tag"),
+		{text("ReplayTimeline.Thumbnail"), text("ReplayTimeline.Timestamp"), text("ReplayTimeline.RecordingTime"),
+		 text("ReplayTimeline.Tag"),
 		 text("ReplayTimeline.Rating"), text("ReplayTimeline.Note"), text("ReplayTimeline.Application"),
 		 text("ReplayTimeline.Audio"), text("ReplayTimeline.Duration"), text("ReplayTimeline.ReplayPath"),
 		 text("ReplayTimeline.RecordingPath"), text("ReplayTimeline.Confidence")});
@@ -139,34 +173,96 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	replayTable_->setSortingEnabled(true);
 	replayTable_->setAlternatingRowColors(true);
 	replayTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
+	replayTable_->setSelectionMode(QAbstractItemView::SingleSelection);
 	replayTable_->setWordWrap(false);
+	replayTable_->setIconSize(QSize(96, 54));
+	replayTable_->verticalHeader()->setDefaultSectionSize(60);
 	replayTable_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+	replayTable_->horizontalHeader()->setSectionResizeMode(ThumbnailColumn, QHeaderView::Fixed);
+	replayTable_->setColumnWidth(ThumbnailColumn, 104);
 	replayTable_->horizontalHeader()->setSectionResizeMode(NoteColumn, QHeaderView::Stretch);
-	layout->addWidget(replayTable_, 2);
+	contentSplitter_ = new QSplitter(Qt::Vertical, this);
+	contentSplitter_->setChildrenCollapsible(false);
+	contentSplitter_->setHandleWidth(8);
+	contentSplitter_->setOpaqueResize(true);
+	contentSplitter_->setStyleSheet(
+		QStringLiteral("QSplitter::handle:vertical { background: palette(mid); margin: 2px 0; }"));
+	contentSplitter_->addWidget(replayTable_);
+	auto *previewGroup = new QFrame(contentSplitter_);
+	previewGroup->setFrameShape(QFrame::StyledPanel);
+	auto *previewLayout = new QVBoxLayout(previewGroup);
+	previewLayout->setContentsMargins(8, 6, 8, 6);
+	auto *previewHeader = new QHBoxLayout();
+	auto *previewTitle = new QLabel(text("ReplayTimeline.PreviewTitle"), previewGroup);
+	QFont previewTitleFont = previewTitle->font();
+	previewTitleFont.setBold(true);
+	previewTitle->setFont(previewTitleFont);
+	previewHeader->addWidget(previewTitle);
+	previewHeader->addStretch();
+	previewFocusButton_ = new QPushButton(text("ReplayTimeline.ExpandPreview"), previewGroup);
+	previewFocusButton_->setToolTip(text("ReplayTimeline.ExpandPreviewTooltip"));
+	previewHeader->addWidget(previewFocusButton_);
+	previewLayout->addLayout(previewHeader);
+	preview_ = new ReplayPreviewWidget(previewGroup);
+	previewLayout->addWidget(preview_, 1);
+	contentSplitter_->addWidget(previewGroup);
+	contentSplitter_->setStretchFactor(0, 2);
+	contentSplitter_->setStretchFactor(1, 3);
+	contentSplitter_->setSizes({320, 420});
+	contentSplitter_->handle(1)->setToolTip(text("ReplayTimeline.ResizePreviewTooltip"));
+	layout->addWidget(contentSplitter_, 2);
+
+	const QString settingsPath = uiSettingsPath();
+	if (!settingsPath.isEmpty()) {
+		QDir().mkpath(QFileInfo(settingsPath).absolutePath());
+		uiSettings_ = new QSettings(settingsPath, QSettings::IniFormat, this);
+		const QByteArray splitterState = uiSettings_->value(QStringLiteral("layout/contentSplitter")).toByteArray();
+		if (!splitterState.isEmpty())
+			contentSplitter_->restoreState(splitterState);
+	}
 
 	message_ = new QLabel(this);
 	message_->setWordWrap(true);
 	layout->addWidget(message_);
+	message_->hide();
 
-	auto *diagnosticsHeader = new QHBoxLayout();
-	auto *diagnosticsTitle = new QLabel(text("ReplayTimeline.DiagnosticsTitle"), this);
-	QFont titleFont = diagnosticsTitle->font();
-	titleFont.setBold(true);
-	diagnosticsTitle->setFont(titleFont);
-	auto *clearButton = new QPushButton(text("ReplayTimeline.Clear"), this);
-	diagnosticsHeader->addWidget(diagnosticsTitle);
-	diagnosticsHeader->addStretch();
-	diagnosticsHeader->addWidget(clearButton);
-	layout->addLayout(diagnosticsHeader);
-
-	diagnostics_ = new QPlainTextEdit(this);
+	diagnosticsDialog_ = new QDialog(this);
+	diagnosticsDialog_->setWindowTitle(text("ReplayTimeline.DiagnosticsTitle"));
+	diagnosticsDialog_->setModal(false);
+	diagnosticsDialog_->resize(760, 420);
+	auto *diagnosticsLayout = new QVBoxLayout(diagnosticsDialog_);
+	diagnostics_ = new QPlainTextEdit(diagnosticsDialog_);
 	diagnostics_->setReadOnly(true);
 	diagnostics_->setLineWrapMode(QPlainTextEdit::NoWrap);
 	diagnostics_->setMaximumBlockCount(500);
-	diagnostics_->setMaximumHeight(140);
-	layout->addWidget(diagnostics_);
+	diagnosticsLayout->addWidget(diagnostics_, 1);
+	auto *diagnosticsActions = new QHBoxLayout();
+	auto *clearButton = new QPushButton(text("ReplayTimeline.Clear"), diagnosticsDialog_);
+	auto *closeDiagnosticsButton = new QPushButton(text("ReplayTimeline.Close"), diagnosticsDialog_);
+	diagnosticsActions->addStretch();
+	diagnosticsActions->addWidget(clearButton);
+	diagnosticsActions->addWidget(closeDiagnosticsButton);
+	diagnosticsLayout->addLayout(diagnosticsActions);
 
 	connect(clearButton, &QPushButton::clicked, diagnostics_, &QPlainTextEdit::clear);
+	connect(closeDiagnosticsButton, &QPushButton::clicked, diagnosticsDialog_, &QDialog::close);
+	connect(diagnosticsButton, &QPushButton::clicked, this, [this]() {
+		diagnosticsDialog_->show();
+		diagnosticsDialog_->raise();
+		diagnosticsDialog_->activateWindow();
+	});
+	connect(previewFocusButton_, &QPushButton::clicked, this,
+		[this]() { setPreviewFocusMode(!previewFocusMode_); });
+	auto *leaveFocusShortcut = new QShortcut(QKeySequence(Qt::Key_Escape), this);
+	leaveFocusShortcut->setContext(Qt::WidgetWithChildrenShortcut);
+	connect(leaveFocusShortcut, &QShortcut::activated, this, [this]() {
+		if (previewFocusMode_)
+			setPreviewFocusMode(false);
+	});
+	connect(contentSplitter_, &QSplitter::splitterMoved, this, [this](int, int) {
+		if (uiSettings_ && !previewFocusMode_)
+			uiSettings_->setValue(QStringLiteral("layout/contentSplitter"), contentSplitter_->saveState());
+	});
 	connect(clearSessionsButton_, &QPushButton::clicked, this, [this]() {
 		if (!callbacks_.clearSessionsRequested)
 			return;
@@ -234,6 +330,16 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	});
 	connect(replayModel_, &QStandardItemModel::itemChanged, this,
 		[this](QStandardItem *changedItem) { handleItemChanged(changedItem); });
+	connect(replayTable_->selectionModel(), &QItemSelectionModel::currentRowChanged, this,
+		[this](const QModelIndex &current) {
+			if (!current.isValid()) {
+				preview_->clearReplay();
+				return;
+			}
+			const int sourceRow = replayProxy_->mapToSource(current).row();
+			if (QStandardItem *path = replayModel_->item(sourceRow, ReplayPathColumn))
+				preview_->loadReplay(path->text());
+		});
 	setOutputState(false, false, false);
 }
 
@@ -284,6 +390,7 @@ void ReplayTimelineDock::setSessions(const std::vector<SessionSummary> &sessions
 
 void ReplayTimelineDock::setReplayRows(const std::vector<ReplayRow> &rows)
 {
+	preview_->clearReplay();
 	loadingRows_ = true;
 	replayModel_->removeRows(0, replayModel_->rowCount());
 	for (const ReplayRow &row : rows) {
@@ -310,7 +417,10 @@ void ReplayTimelineDock::setReplayRows(const std::vector<ReplayRow> &rows)
 			audioItem->setForeground(QColor(QStringLiteral("#d9534f")));
 			audioItem->setToolTip(text("ReplayTimeline.AudioMissing"));
 		}
-		QList<QStandardItem *> items{item(row.savedUtc, row.id),
+		auto *thumbnail = item(text("ReplayTimeline.ThumbnailPending"), row.id);
+		thumbnail->setTextAlignment(Qt::AlignCenter);
+		QList<QStandardItem *> items{thumbnail,
+					     item(row.savedUtc, row.id),
 					     item(recordingTime, row.id),
 					     item(row.tag, row.id, true),
 					     rating,
@@ -324,6 +434,33 @@ void ReplayTimelineDock::setReplayRows(const std::vector<ReplayRow> &rows)
 		replayModel_->appendRow(items);
 	}
 	loadingRows_ = false;
+}
+
+void ReplayTimelineDock::setReplayThumbnail(std::int64_t replayId, const QString &replayPath,
+					    const QString &thumbnailPath, const QString &error)
+{
+	for (int row = 0; row < replayModel_->rowCount(); ++row) {
+		QStandardItem *thumbnail = replayModel_->item(row, ThumbnailColumn);
+		QStandardItem *path = replayModel_->item(row, ReplayPathColumn);
+		if (!thumbnail || !path || thumbnail->data(Qt::UserRole).toLongLong() != replayId ||
+		    path->text() != replayPath)
+			continue;
+		const QPixmap image(thumbnailPath);
+		if (!image.isNull()) {
+			thumbnail->setText({});
+			thumbnail->setIcon(QIcon(image));
+			thumbnail->setToolTip(text("ReplayTimeline.ThumbnailTooltip"));
+		} else {
+			thumbnail->setText(text("ReplayTimeline.ThumbnailUnavailable"));
+			thumbnail->setToolTip(error);
+		}
+		return;
+	}
+}
+
+void ReplayTimelineDock::clearPreview()
+{
+	preview_->clearReplay();
 }
 
 void ReplayTimelineDock::setTagNames(const QStringList &tags)
@@ -347,6 +484,37 @@ void ReplayTimelineDock::showMessage(const QString &message, bool error)
 {
 	message_->setText(message);
 	message_->setStyleSheet(error ? QStringLiteral("color: #d9534f;") : QString());
+	message_->setVisible(!message.isEmpty() && !previewFocusMode_);
+}
+
+void ReplayTimelineDock::setPreviewFocusMode(bool enabled)
+{
+	if (previewFocusMode_ == enabled)
+		return;
+	previewFocusMode_ = enabled;
+	if (enabled) {
+		normalSplitterSizes_ = contentSplitter_->sizes();
+		statusBar_->hide();
+		toolbar_->hide();
+		searchBar_->hide();
+		replayTable_->hide();
+		message_->hide();
+		previewFocusButton_->setText(text("ReplayTimeline.RestoreLayout"));
+		previewFocusButton_->setToolTip(text("ReplayTimeline.RestoreLayoutTooltip"));
+		return;
+	}
+
+	statusBar_->show();
+	toolbar_->show();
+	searchBar_->show();
+	replayTable_->show();
+	message_->setVisible(!message_->text().isEmpty());
+	previewFocusButton_->setText(text("ReplayTimeline.ExpandPreview"));
+	previewFocusButton_->setToolTip(text("ReplayTimeline.ExpandPreviewTooltip"));
+	if (!normalSplitterSizes_.isEmpty()) {
+		const QList<int> sizes = normalSplitterSizes_;
+		QTimer::singleShot(0, this, [this, sizes]() { contentSplitter_->setSizes(sizes); });
+	}
 }
 
 void ReplayTimelineDock::handleItemChanged(QStandardItem *changedItem)
