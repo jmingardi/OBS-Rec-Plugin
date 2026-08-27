@@ -177,10 +177,22 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	replayTable_->setWordWrap(false);
 	replayTable_->setIconSize(QSize(96, 54));
 	replayTable_->verticalHeader()->setDefaultSectionSize(60);
-	replayTable_->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
-	replayTable_->horizontalHeader()->setSectionResizeMode(ThumbnailColumn, QHeaderView::Fixed);
+	auto *replayHeader = replayTable_->horizontalHeader();
+	replayHeader->setSectionResizeMode(QHeaderView::Interactive);
+	replayHeader->setMinimumSectionSize(48);
+	replayHeader->setStretchLastSection(false);
 	replayTable_->setColumnWidth(ThumbnailColumn, 104);
-	replayTable_->horizontalHeader()->setSectionResizeMode(NoteColumn, QHeaderView::Stretch);
+	replayTable_->setColumnWidth(TimestampColumn, 170);
+	replayTable_->setColumnWidth(RecordingTimeColumn, 190);
+	replayTable_->setColumnWidth(TagColumn, 90);
+	replayTable_->setColumnWidth(RatingColumn, 90);
+	replayTable_->setColumnWidth(NoteColumn, 220);
+	replayTable_->setColumnWidth(ApplicationColumn, 180);
+	replayTable_->setColumnWidth(AudioColumn, 140);
+	replayTable_->setColumnWidth(DurationColumn, 110);
+	replayTable_->setColumnWidth(ReplayPathColumn, 240);
+	replayTable_->setColumnWidth(RecordingPathColumn, 240);
+	replayTable_->setColumnWidth(ConfidenceColumn, 150);
 	contentSplitter_ = new QSplitter(Qt::Vertical, this);
 	contentSplitter_->setChildrenCollapsible(false);
 	contentSplitter_->setHandleWidth(8);
@@ -219,6 +231,9 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 		const QByteArray splitterState = uiSettings_->value(QStringLiteral("layout/contentSplitter")).toByteArray();
 		if (!splitterState.isEmpty())
 			contentSplitter_->restoreState(splitterState);
+		const QByteArray headerState = uiSettings_->value(QStringLiteral("layout/replayTableHeader")).toByteArray();
+		if (!headerState.isEmpty())
+			replayHeader->restoreState(headerState);
 	}
 
 	message_ = new QLabel(this);
@@ -262,6 +277,10 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	connect(contentSplitter_, &QSplitter::splitterMoved, this, [this](int, int) {
 		if (uiSettings_ && !previewFocusMode_)
 			uiSettings_->setValue(QStringLiteral("layout/contentSplitter"), contentSplitter_->saveState());
+	});
+	connect(replayHeader, &QHeaderView::sectionResized, this, [this, replayHeader](int, int, int) {
+		if (uiSettings_)
+			uiSettings_->setValue(QStringLiteral("layout/replayTableHeader"), replayHeader->saveState());
 	});
 	connect(clearSessionsButton_, &QPushButton::clicked, this, [this]() {
 		if (!callbacks_.clearSessionsRequested)
