@@ -1,5 +1,12 @@
 # OBS Replay Timeline
 
+<p>
+  <img src="https://img.shields.io/badge/Windows-x64-0078D4?logo=windows11&amp;logoColor=white" alt="Windows x64">
+  <img src="https://img.shields.io/badge/OBS%20Studio-32.2%2B-302E31?logo=obsstudio&amp;logoColor=white" alt="OBS Studio 32.2 or newer">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--2.0-blue" alt="GPL-2.0 license"></a>
+  <a href="https://ko-fi.com/jmingardi"><img src="https://img.shields.io/badge/Ko--fi-Support-FF5E5B?logo=ko-fi&amp;logoColor=white" alt="Support on Ko-fi"></a>
+</p>
+
 Native C++/Qt OBS Studio plugin that associates saved Replay Buffer clips with their corresponding intervals in a simultaneous long-form recording.
 
 The working product name is **OBS Replay Timeline**. The first release will provide an OBS dock for tagged replay capture, session review, notes, search, and CSV marker export.
@@ -7,16 +14,6 @@ The working product name is **OBS Replay Timeline**. The first release will prov
 ## Status
 
 The native MVP and live-validated 0.2 feature set are on `main`. Version 0.3 adds asynchronous cached replay thumbnails, an embedded seekable OBS Media Source preview, and persistent user-resizable replay-table columns. The plugin also includes tagged replay hotkeys, recording/pause/split tracking, FIFO request/save correlation, actual-duration and audio-track probing, split-aware timeline mapping, SQLite recovery, searchable/editable session review, ratings, application metadata, disk-space warnings, probe retry, and CSV export. The Windows x64 build and automated tests pass; the new 0.3 preview lifecycle still requires broader live OBS validation.
-
-## Support development
-
-If OBS Replay Timeline saves you time, consider supporting its continued development.
-
-<p align="center">
-  <a href="https://ko-fi.com/jmingardi">
-    <img src="https://img.shields.io/badge/Support%20on%20Ko--fi-FF5E5B?style=for-the-badge&amp;logo=ko-fi&amp;logoColor=white" alt="Support OBS Replay Timeline on Ko-fi">
-  </a>
-</p>
 
 ## Use
 
@@ -115,6 +112,17 @@ initial directory-only recording path with the finalized file path. Older failed
   Linux/macOS remains unvalidated. **Diagnostics…** opens lifecycle logs in a separate modeless window that can be
   closed without clearing its contents.
 - The plugin currently targets OBS Studio 32.2 or newer and Windows x64. macOS/Linux CI scaffolding is present but not yet runtime-validated.
+
+## Support the project
+
+OBS Replay Timeline is free and open source. If it saves you editing time and you would like to help fund continued
+development, testing, and maintenance, you can support the project on Ko-fi.
+
+<p align="center">
+  <a href="https://ko-fi.com/jmingardi">
+    <img src="https://img.shields.io/badge/Support%20OBS%20Replay%20Timeline%20on%20Ko--fi-FF5E5B?style=for-the-badge&amp;logo=ko-fi&amp;logoColor=white" alt="Support OBS Replay Timeline on Ko-fi">
+  </a>
+</p>
 
 ## Scope boundary
 
