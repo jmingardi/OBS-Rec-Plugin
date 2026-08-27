@@ -8,6 +8,8 @@ on:
       - 'release/**'
     tags:
       - '*'
+    paths-ignore:
+      - '**/*.md'
 permissions:
   contents: write
 jobs:
@@ -27,10 +29,7 @@ jobs:
 
   create-release:
     name: Create Release 🛫
-    # Version tags create the normal draft release only after every platform
-    # succeeds. Every main-branch commit creates a uniquely tagged development
-    # pre-release when the build run contains Windows artifacts, even if an
-    # unfinished Linux/macOS port fails elsewhere in the reusable workflow.
+    # Tags create draft releases; non-documentation changes on main create Windows development pre-releases.
     if: >-
       ${{
         !cancelled() &&
@@ -153,7 +152,7 @@ jobs:
             fi
           fi
 
-          release_notes="${GITHUB_WORKSPACE}/docs/releases/${PLUGIN_VERSION}.md"
+          release_notes="${GITHUB_WORKSPACE}/.github/release-notes/${PLUGIN_VERSION}.md"
           if [[ ! -s "${release_notes}" ]]; then
             echo "Release notes are missing or empty: ${release_notes}" >&2
             exit 1

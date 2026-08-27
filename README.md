@@ -67,10 +67,10 @@ to OBS's recommended system plugin directory, `C:\ProgramData\obs-studio\plugins
 in-place upgrades and clean binary removal, and deliberately leaves session metadata in the OBS profile untouched.
 Select a different destination in the installer for a custom or portable OBS setup.
 
-Every push or merge to `main` builds a Windows ZIP and Inno Setup installer, then publishes a development pre-release
+Every non-documentation push or merge to `main` builds a Windows ZIP and Inno Setup installer, then publishes a development pre-release
 named `OBS Replay Timeline - X.Y.Z`, where `X.Y.Z` comes from `buildspec.json`. Its internal tag remains unique to the
 workflow run. The release description contains the complete curated bullet list from
-`docs/releases/<version>.md` plus SHA-256 checksums; publishing fails when those versioned notes are absent, empty, or
+`.github/release-notes/<version>.md` plus SHA-256 checksums; publishing fails when those versioned notes are absent, empty, or
 not a bullet list. Development releases remain pre-releases; their internal tags use a fixed-width workflow sequence
 and an annotated tag timestamp so GitHub displays the newest publication first, including multiple releases on the
 same day. Pushes to `test` do not run this release workflow. A semantic version tag matching `buildspec.json` creates the normal draft
@@ -105,15 +105,6 @@ initial directory-only recording path with the finalized file path. Older failed
   Linux/macOS remains unvalidated. **Diagnostics…** opens lifecycle logs in a separate modeless window that can be
   closed without clearing its contents.
 - The plugin currently targets OBS Studio 32.2 or newer and Windows x64. macOS/Linux CI scaffolding is present but not yet runtime-validated.
-
-## Documents
-
-- [Product brief](docs/PRODUCT_BRIEF.md)
-- [Official-source research](docs/RESEARCH.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Implementation plan](docs/IMPLEMENTATION_PLAN.md)
-- [Source layout](src/README.md)
-- [Test strategy](tests/README.md)
 
 ## Scope boundary
 
