@@ -69,8 +69,9 @@ Select a different destination in the installer for a custom or portable OBS set
 
 Every push or merge to `main` builds a Windows ZIP and Inno Setup installer, then publishes a development pre-release
 named `OBS Replay Timeline - X.Y.Z`, where `X.Y.Z` comes from `buildspec.json`. Its internal tag remains unique to the
-workflow run. The release description contains a short list of pushed commit subjects plus SHA-256 checksums. Pushes to
-`test` do not run this release workflow. A semantic version tag matching `buildspec.json` creates the normal draft
+workflow run. The release description contains the complete curated bullet list from
+`docs/releases/<version>.md` plus SHA-256 checksums; publishing fails when those versioned notes are absent, empty, or
+not a bullet list. Pushes to `test` do not run this release workflow. A semantic version tag matching `buildspec.json` creates the normal draft
 multi-platform release after all configured builds succeed. Installers are unsigned until Windows code-signing
 credentials are configured, so Windows SmartScreen may display a warning.
 
@@ -105,7 +106,7 @@ initial directory-only recording path with the finalized file path. Older failed
 
 ## Documents
 
-- [Prior product discussion](OBS_PLUGIN_IDEAS_CONVERSATION.md)
+- [Product brief](docs/PRODUCT_BRIEF.md)
 - [Official-source research](docs/RESEARCH.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md)

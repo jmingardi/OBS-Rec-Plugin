@@ -128,12 +128,12 @@ jobs:
             done
           done
 
-      - name: Generate Checksums 🪪
+      - name: Generate Release Notes and Checksums 🪪
         if: fromJSON(steps.check.outputs.validTag)
         env:
-          BEFORE_SHA: ${{ github.event.before }}
+          PLUGIN_VERSION: ${{ needs.build-project.outputs.pluginVersion || '0.0.0' }}
         run: |
-          : Generate Checksums 🪪
+          : Generate Release Notes and Checksums 🪪
           if [[ "${RUNNER_DEBUG}" ]]; then set -x; fi
           shopt -s extglob
           shopt -s nullglob
@@ -152,6 +152,20 @@ jobs:
             fi
           fi
 
+          release_notes="${GITHUB_WORKSPACE}/docs/releases/${PLUGIN_VERSION}.md"
+          if [[ ! -s "${release_notes}" ]]; then
+            echo "Release notes are missing or empty: ${release_notes}" >&2
+            exit 1
+          fi
+          if ! grep -Eq '^- .+' "${release_notes}"; then
+            echo "Release notes must contain at least one bullet point: ${release_notes}" >&2
+            exit 1
+          fi
+          if grep -Evq '^$|^- .+' "${release_notes}"; then
+            echo "Release notes must contain only bullet points and blank lines: ${release_notes}" >&2
+            exit 1
+          fi
+
           {
             if [[ '${{ steps.check.outputs.assetScope }}' == 'windows' ]]; then
               echo "Automated development build from the latest commit on \`${GITHUB_REF_NAME}\`."
@@ -163,16 +177,7 @@ jobs:
             fi
 
             echo '### Changes / fixes'
-            if [[ "${BEFORE_SHA}" =~ ^[0]+$ ]] || ! git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
-              git log -1 --format='- %s' "${GITHUB_SHA}"
-            else
-              changes="$(git log --reverse --format='- %s' "${BEFORE_SHA}..${GITHUB_SHA}" | tail -n 8)"
-              if [[ "${changes}" ]]; then
-                echo "${changes}"
-              else
-                git log -1 --format='- %s' "${GITHUB_SHA}"
-              fi
-            fi
+            cat "${release_notes}"
             echo
             echo '### Checksums'
           } > ${{ github.workspace }}/CHECKSUMS.txt
