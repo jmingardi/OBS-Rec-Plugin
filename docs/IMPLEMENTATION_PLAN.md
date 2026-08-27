@@ -2,7 +2,12 @@
 
 The phases are ordered to retire API and timing risk before investing in the full dock. A phase is complete only when its listed evidence exists.
 
-Current progress: the Windows x64 MVP implementation is present. The official OBS 32.2.2/Qt scaffold configures successfully, the complete plugin builds with MSVC warnings treated as errors, and timeline, SQLite recovery/Unicode, split-span, and CSV tests pass. Live OBS output/hotkey compatibility-matrix tests and cross-platform runtime validation remain before a public release.
+Current progress: the Windows x64 MVP implementation is present and its tested fixes are on `main`. Version 0.2 is in
+validation on `test`, adding ratings, a 10 GiB destination-volume warning, replay audio-stream validation, and
+best-effort Game/Window Capture application metadata. The official OBS 32.2.2/Qt scaffold configures successfully, the
+complete plugin builds with MSVC warnings treated as errors, and timeline, SQLite migration/Unicode, split-span, CSV,
+path-resolution, and real-media probe tests pass. Live OBS validation of the 0.2 additions and cross-platform runtime
+validation remain before a public release.
 
 ## Phase 0 — Build and API feasibility
 
@@ -88,9 +93,18 @@ Exit evidence: packaged Windows x64 MVP plus CI builds for the supported matrix,
 ## Deferred until after MVP
 
 - thumbnails and embedded preview
-- ratings
 - Resolve/Premiere marker formats
-- disk-space and audio-track validation
 - duplicate detection
 - optional subclip extraction
-- automatic game/application metadata
+
+## Version 0.2 validation
+
+1. Enter ratings from 0 through 5, restart OBS, and confirm they persist and appear in selected/all-session CSV exports.
+2. Confirm invalid ratings are rejected without changing the saved value.
+3. Save replays with audio and with no audio stream; confirm the dock and CSV report `ok` and `missing` respectively.
+4. Retry an older replay probe and confirm its audio validation changes from `unknown` when the media is available.
+5. Save tagged replays from active Game Capture and Window Capture sources and verify executable, window title, and OBS
+   source name. Confirm unsupported/replay-only setups safely leave these fields blank.
+6. Confirm the displayed free space is for the recording/replay destination volume and the red warning appears below
+   10 GiB.
+7. Upgrade an existing 0.1 installation and verify all earlier sessions, mappings, paths, notes, and tags remain intact.

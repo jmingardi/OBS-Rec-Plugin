@@ -3,6 +3,7 @@
 #include <utility>
 
 #include <QComboBox>
+#include <QColor>
 #include <QDateTime>
 #include <QFileDialog>
 #include <QFont>
@@ -20,6 +21,7 @@
 #include <QStandardItemModel>
 #include <QSet>
 #include <QTableView>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include <obs-module.h>
@@ -30,7 +32,10 @@ enum Column {
 	TimestampColumn,
 	RecordingTimeColumn,
 	TagColumn,
+	RatingColumn,
 	NoteColumn,
+	ApplicationColumn,
+	AudioColumn,
 	DurationColumn,
 	ReplayPathColumn,
 	RecordingPathColumn,
@@ -75,9 +80,20 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	auto *statusLayout = new QHBoxLayout();
 	recordingStatus_ = new QLabel(this);
 	replayStatus_ = new QLabel(this);
+	diskStatus_ = new QLabel(this);
+	diskRefreshActivity_ = new QLabel(text("ReplayTimeline.DiskRefreshing"), this);
+	diskRefreshActivity_->setStyleSheet(QStringLiteral("color: #5bc0de; font-weight: bold;"));
+	diskRefreshActivity_->hide();
+	diskRefreshActivityTimer_ = new QTimer(this);
+	diskRefreshActivityTimer_->setInterval(1'500);
+	diskRefreshActivityTimer_->setSingleShot(true);
+	connect(diskRefreshActivityTimer_, &QTimer::timeout, diskRefreshActivity_, &QWidget::hide);
 	statusLayout->addWidget(recordingStatus_);
 	statusLayout->addSpacing(16);
 	statusLayout->addWidget(replayStatus_);
+	statusLayout->addSpacing(16);
+	statusLayout->addWidget(diskStatus_);
+	statusLayout->addWidget(diskRefreshActivity_);
 	statusLayout->addStretch();
 	layout->addLayout(statusLayout);
 
@@ -110,7 +126,8 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	replayModel_ = new QStandardItemModel(0, ColumnCount, this);
 	replayModel_->setHorizontalHeaderLabels(
 		{text("ReplayTimeline.Timestamp"), text("ReplayTimeline.RecordingTime"), text("ReplayTimeline.Tag"),
-		 text("ReplayTimeline.Note"), text("ReplayTimeline.Duration"), text("ReplayTimeline.ReplayPath"),
+		 text("ReplayTimeline.Rating"), text("ReplayTimeline.Note"), text("ReplayTimeline.Application"),
+		 text("ReplayTimeline.Audio"), text("ReplayTimeline.Duration"), text("ReplayTimeline.ReplayPath"),
 		 text("ReplayTimeline.RecordingPath"), text("ReplayTimeline.Confidence")});
 	replayProxy_ = new QSortFilterProxyModel(this);
 	replayProxy_->setSourceModel(replayModel_);
@@ -190,9 +207,9 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 			return;
 		const QString title = text(allSessions ? "ReplayTimeline.ExportAllCsv" : "ReplayTimeline.ExportCsv");
 		const QString defaultName = allSessions ? QStringLiteral("replay-markers-all-sessions.csv")
-							    : QStringLiteral("replay-markers.csv");
-		const QString path = QFileDialog::getSaveFileName(this, title, defaultName,
-								  QStringLiteral("CSV (*.csv)"));
+							: QStringLiteral("replay-markers.csv");
+		const QString path =
+			QFileDialog::getSaveFileName(this, title, defaultName, QStringLiteral("CSV (*.csv)"));
 		if (!path.isEmpty())
 			callbacks_.exportCsv(path, allSessions);
 	};
@@ -240,8 +257,8 @@ void ReplayTimelineDock::setOutputState(bool recordingActive, bool recordingPaus
 		text(replayBufferActive ? "ReplayTimeline.ReplayActive" : "ReplayTimeline.ReplayInactive"));
 	const bool captureActive = recordingActive || replayBufferActive;
 	clearSessionsButton_->setEnabled(!captureActive);
-	clearSessionsButton_->setToolTip(
-		captureActive ? text("ReplayTimeline.ClearSessionsActive") : text("ReplayTimeline.ClearSessionsTooltip"));
+	clearSessionsButton_->setToolTip(captureActive ? text("ReplayTimeline.ClearSessionsActive")
+						       : text("ReplayTimeline.ClearSessionsTooltip"));
 }
 
 void ReplayTimelineDock::setCallbacks(Callbacks callbacks)
@@ -275,10 +292,31 @@ void ReplayTimelineDock::setReplayRows(const std::vector<ReplayRow> &rows)
 										      timecode(row.recordingEndNs))
 						      : QString();
 		const QString confidence = QStringLiteral("%1 / %2").arg(row.confidence, row.probeStatus);
+		auto *rating = item(QString::number(row.rating), row.id, true);
+		rating->setData(row.rating, Qt::UserRole + 1);
+		QString application = row.applicationName;
+		if (!row.windowTitle.isEmpty() && row.windowTitle.compare(application, Qt::CaseInsensitive) != 0)
+			application += application.isEmpty() ? row.windowTitle
+							     : QStringLiteral(" — ") + row.windowTitle;
+		auto *applicationItem = item(application, row.id);
+		applicationItem->setToolTip(QStringLiteral("Application: %1\nWindow: %2\nOBS source: %3")
+						    .arg(row.applicationName, row.windowTitle, row.captureSource));
+		const QString audio =
+			row.audioTracks >= 0
+				? QStringLiteral("%1 track(s) / %2").arg(row.audioTracks).arg(row.audioStatus)
+				: QStringLiteral("Unknown");
+		auto *audioItem = item(audio, row.id);
+		if (row.audioStatus == QStringLiteral("missing")) {
+			audioItem->setForeground(QColor(QStringLiteral("#d9534f")));
+			audioItem->setToolTip(text("ReplayTimeline.AudioMissing"));
+		}
 		QList<QStandardItem *> items{item(row.savedUtc, row.id),
 					     item(recordingTime, row.id),
 					     item(row.tag, row.id, true),
+					     rating,
 					     item(row.note, row.id, true),
+					     applicationItem,
+					     audioItem,
 					     item(timecode(row.durationNs), row.id),
 					     item(row.replayPath, row.id),
 					     item(row.recordingPaths, row.id),
@@ -293,6 +331,18 @@ void ReplayTimelineDock::setTagNames(const QStringList &tags)
 	tagNames_ = tags;
 }
 
+void ReplayTimelineDock::showDiskRefreshActivity()
+{
+	diskRefreshActivity_->show();
+	diskRefreshActivityTimer_->start();
+}
+
+void ReplayTimelineDock::setDiskStatus(const QString &message, bool warning)
+{
+	diskStatus_->setText(message);
+	diskStatus_->setStyleSheet(warning ? QStringLiteral("color: #d9534f; font-weight: bold;") : QString());
+}
+
 void ReplayTimelineDock::showMessage(const QString &message, bool error)
 {
 	message_->setText(message);
@@ -305,10 +355,21 @@ void ReplayTimelineDock::handleItemChanged(QStandardItem *changedItem)
 		return;
 	const int sourceRow = changedItem->row();
 	QStandardItem *tag = replayModel_->item(sourceRow, TagColumn);
+	QStandardItem *rating = replayModel_->item(sourceRow, RatingColumn);
 	QStandardItem *note = replayModel_->item(sourceRow, NoteColumn);
-	if (!tag || !note)
+	if (!tag || !rating || !note)
 		return;
-	callbacks_.replayEdited(tag->data(Qt::UserRole).toLongLong(), tag->text().trimmed(), note->text());
+	bool validRating = false;
+	const int ratingValue = rating->text().trimmed().toInt(&validRating);
+	if (!validRating || ratingValue < 0 || ratingValue > 5) {
+		loadingRows_ = true;
+		rating->setText(QString::number(rating->data(Qt::UserRole + 1).toInt()));
+		loadingRows_ = false;
+		showMessage(text("ReplayTimeline.RatingInvalid"), true);
+		return;
+	}
+	rating->setData(ratingValue, Qt::UserRole + 1);
+	callbacks_.replayEdited(tag->data(Qt::UserRole).toLongLong(), tag->text().trimmed(), note->text(), ratingValue);
 }
 
 } // namespace replay_timeline

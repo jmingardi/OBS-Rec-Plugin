@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/timeline-mapper.hpp"
+#include "model/application-metadata.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -31,6 +32,12 @@ struct ReplayRow {
 	QString recordingPaths;
 	QString confidence;
 	QString probeStatus;
+	int rating = 0;
+	int audioTracks = -1;
+	QString audioStatus;
+	QString applicationName;
+	QString windowTitle;
+	QString captureSource;
 };
 
 struct CsvRow {
@@ -45,7 +52,13 @@ struct CsvRow {
 	std::int64_t segmentEndNs = -1;
 	QString tag;
 	QString note;
+	int rating = 0;
+	QString applicationName;
+	QString windowTitle;
+	QString captureSource;
 	std::int64_t durationNs = -1;
+	int audioTracks = -1;
+	QString audioStatus;
 	QString replayPath;
 	QString recordingPath;
 	QString confidence;
@@ -59,6 +72,7 @@ struct PendingRequest {
 	std::int64_t recordingEndNs = -1;
 	std::int64_t requestedNs = 0;
 	QString tag;
+	ApplicationMetadata metadata;
 };
 
 class Repository final {
@@ -87,15 +101,17 @@ public:
 	std::int64_t createPause(std::int64_t runId, std::int64_t startedNs);
 	bool closePause(std::int64_t pauseId, std::int64_t endedNs);
 	std::int64_t createRequest(std::int64_t sessionId, int generation, std::int64_t runId,
-				   std::int64_t recordingEndNs, std::int64_t requestedNs, const QString &tag);
+				   std::int64_t recordingEndNs, std::int64_t requestedNs, const QString &tag,
+				   const ApplicationMetadata &metadata = {});
 	std::optional<PendingRequest> resolveOldestPending(int generation, std::int64_t savedNs);
 	std::int64_t createReplay(std::int64_t sessionId, const std::optional<PendingRequest> &request,
-				  std::int64_t savedNs, const QString &savedUtc, const QString &path);
+				  std::int64_t savedNs, const QString &savedUtc, const QString &path,
+				  const ApplicationMetadata &metadata = {});
 	bool replayProbeTarget(std::int64_t replayId, QString &path, QString &savedUtc, std::int64_t &savedNs,
 			       std::optional<PendingRequest> &request) const;
 	bool updateReplayPath(std::int64_t replayId, const QString &path);
-	bool completeProbe(std::int64_t replayId, std::int64_t durationNs, const QString &probeStatus,
-			   const QString &confidence, const QString &reason,
+	bool completeProbe(std::int64_t replayId, std::int64_t durationNs, int audioTracks, const QString &audioStatus,
+			   const QString &probeStatus, const QString &confidence, const QString &reason,
 			   const std::vector<domain::AssociationSpan> &spans);
 	std::vector<domain::RecordingSegment> segmentsForRun(std::int64_t runId, std::int64_t openEndNs) const;
 
@@ -103,7 +119,7 @@ public:
 	std::vector<ReplayRow> replays(std::int64_t sessionId) const;
 	std::vector<CsvRow> csvRows(std::int64_t sessionId = 0) const;
 	bool clearSessions();
-	bool updateReplay(std::int64_t replayId, const QString &tag, const QString &note);
+	bool updateReplay(std::int64_t replayId, const QString &tag, const QString &note, int rating);
 	QString setting(const QString &key, const QString &fallback) const;
 	bool setSetting(const QString &key, const QString &value);
 

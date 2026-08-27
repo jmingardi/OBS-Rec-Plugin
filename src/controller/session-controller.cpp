@@ -3,15 +3,20 @@
 #include "export/csv-exporter.hpp"
 #include "media/media-probe.hpp"
 #include "media/replay-path-resolver.hpp"
+#include "obs/application-metadata.hpp"
 #include "ui/replay-timeline-dock.hpp"
 
 #include <algorithm>
+#include <limits>
 
 #include <QDateTime>
 #include <QFileInfo>
 #include <QMetaObject>
+#include <QSet>
+#include <QStorageInfo>
 #include <QThread>
 #include <QThreadPool>
+#include <QTimer>
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -35,7 +40,12 @@ QString detailValue(const QString &detail)
 
 } // namespace
 
-SessionController::SessionController(ReplayTimelineDock *dock) : QObject(dock), dock_(dock) {}
+SessionController::SessionController(ReplayTimelineDock *dock) : QObject(dock), dock_(dock)
+{
+	diskTimer_ = new QTimer(this);
+	diskTimer_->setInterval(30'000);
+	connect(diskTimer_, &QTimer::timeout, this, [this]() { updateDiskSpaceStatus(); });
+}
 
 SessionController::~SessionController()
 {
@@ -61,8 +71,8 @@ bool SessionController::start(const QString &databasePath, QString &error)
 				selectedSessionId_ = sessionId;
 				refresh();
 			},
-			[this](std::int64_t replayId, const QString &tag, const QString &note) {
-				if (!repository_.updateReplay(replayId, tag, note) && dock_)
+			[this](std::int64_t replayId, const QString &tag, const QString &note, int rating) {
+				if (!repository_.updateReplay(replayId, tag, note, rating) && dock_)
 					dock_->showMessage(repository_.lastError(), true);
 			},
 			[this](const QString &path, bool allSessions) { exportCsv(path, allSessions); },
@@ -98,6 +108,8 @@ void SessionController::stop()
 	if (!started_)
 		return;
 	unregisterHotkeys();
+	diskTimer_->stop();
+	frontendReady_ = false;
 	repository_.close();
 	started_ = false;
 }
@@ -141,7 +153,13 @@ void SessionController::handleObsEvent(const QString &eventName, const QString &
 {
 	if (!started_)
 		return;
-	if (eventName == QStringLiteral("RECORDING_STARTED")) {
+	if (eventName == QStringLiteral("OBS_FINISHED_LOADING")) {
+		frontendReady_ = true;
+		diskTimer_->start();
+	} else if (eventName == QStringLiteral("OBS_EXIT")) {
+		frontendReady_ = false;
+		diskTimer_->stop();
+	} else if (eventName == QStringLiteral("RECORDING_STARTED")) {
 		recordingActive_ = true;
 		ensureSession(now);
 		beginRecording(now, detailValue(detail));
@@ -167,12 +185,15 @@ void SessionController::handleObsEvent(const QString &eventName, const QString &
 		const QString path = detailValue(detail);
 		const std::optional<PendingRequest> request = repository_.resolveOldestPending(replayGeneration_, now);
 		const QString savedUtc = utcNow();
-		const std::int64_t replayId = repository_.createReplay(activeSessionId_, request, now, savedUtc, path);
+		const ApplicationMetadata metadata = request ? request->metadata : currentApplicationMetadata();
+		const std::int64_t replayId =
+			repository_.createReplay(activeSessionId_, request, now, savedUtc, path, metadata);
 		if (replayId)
 			startProbe(replayId, path, savedUtc, now, request);
 		refresh(activeSessionId_);
 		closeSessionIfIdle(now);
 	}
+	updateDiskSpaceStatus();
 }
 
 void SessionController::requestReplay(const QString &tag, std::int64_t requestedNs)
@@ -187,7 +208,9 @@ void SessionController::requestReplay(const QString &tag, std::int64_t requested
 	ensureSession(requestedNs);
 	const std::int64_t runId = activeRun_ ? activeRun_->id : 0;
 	const std::int64_t recordingEnd = activeRun_ ? currentMediaTime(requestedNs) : -1;
-	if (!repository_.createRequest(activeSessionId_, replayGeneration_, runId, recordingEnd, requestedNs, tag)) {
+	const ApplicationMetadata metadata = currentApplicationMetadata();
+	if (!repository_.createRequest(activeSessionId_, replayGeneration_, runId, recordingEnd, requestedNs, tag,
+				       metadata)) {
 		if (dock_)
 			dock_->showMessage(repository_.lastError(), true);
 		return;
@@ -288,8 +311,7 @@ void SessionController::closeSessionIfIdle(std::int64_t now)
 }
 
 void SessionController::startProbe(std::int64_t replayId, const QString &path, const QString &savedUtc,
-				   std::int64_t savedNs,
-				   std::optional<PendingRequest> request)
+				   std::int64_t savedNs, std::optional<PendingRequest> request)
 {
 	QPointer<SessionController> self(this);
 	QThreadPool::globalInstance()->start([self, replayId, path, savedUtc, savedNs, request = std::move(request)]() {
@@ -309,7 +331,7 @@ void SessionController::startProbe(std::int64_t replayId, const QString &path, c
 				if (result.succeeded())
 					break;
 			} else {
-				result = {-1, resolution.detail};
+				result = {-1, -1, resolution.detail};
 			}
 			if (attempt < 5)
 				QThread::msleep(400);
@@ -320,9 +342,9 @@ void SessionController::startProbe(std::int64_t replayId, const QString &path, c
 			self,
 			[self, replayId, request, result, resolution, expectedRecordingStartedUtc]() {
 				if (self)
-					self->finishProbe(replayId, request, result.durationNs, result.error,
-							  resolution.path, resolution.detail,
-							  expectedRecordingStartedUtc);
+					self->finishProbe(replayId, request, result.durationNs, result.audioTracks,
+							  result.audioStatus(), result.error, resolution.path,
+							  resolution.detail, expectedRecordingStartedUtc);
 			},
 			Qt::QueuedConnection);
 	});
@@ -345,8 +367,9 @@ void SessionController::retryProbe(std::int64_t replayId)
 }
 
 void SessionController::finishProbe(std::int64_t replayId, const std::optional<PendingRequest> &request,
-				    std::int64_t durationNs, const QString &error, const QString &resolvedPath,
-				    const QString &resolutionDetail, const QDateTime &expectedRecordingStartedUtc)
+				    std::int64_t durationNs, int audioTracks, const QString &audioStatus,
+				    const QString &error, const QString &resolvedPath, const QString &resolutionDetail,
+				    const QDateTime &expectedRecordingStartedUtc)
 {
 	if (!resolvedPath.isEmpty())
 		repository_.updateReplayPath(replayId, resolvedPath);
@@ -362,10 +385,10 @@ void SessionController::finishProbe(std::int64_t replayId, const std::optional<P
 				const QString storedPath = QString::fromStdString(segment.path);
 				if (QFileInfo(storedPath).isFile())
 					continue;
-				const QDateTime expectedSegmentStart = expectedRecordingStartedUtc.isValid()
-								       ? expectedRecordingStartedUtc.addMSecs(
-									 segment.mediaStart / 1'000'000)
-								       : QDateTime();
+				const QDateTime expectedSegmentStart =
+					expectedRecordingStartedUtc.isValid()
+						? expectedRecordingStartedUtc.addMSecs(segment.mediaStart / 1'000'000)
+						: QDateTime();
 				const ReplayPathResolution recording =
 					resolveRecordingPath(storedPath, expectedSegmentStart);
 				if (recording.found && repository_.updateSegmentPath(segment.id, recording.path))
@@ -386,8 +409,10 @@ void SessionController::finishProbe(std::int64_t replayId, const std::optional<P
 		if (!resolutionDetail.isEmpty())
 			reason += QStringLiteral("; ") + resolutionDetail;
 	}
-	repository_.completeProbe(replayId, durationNs, probeStatus, confidence, reason, spans);
+	repository_.completeProbe(replayId, durationNs, audioTracks, audioStatus, probeStatus, confidence, reason,
+				  spans);
 	refresh();
+	updateDiskSpaceStatus();
 }
 
 void SessionController::loadTags()
@@ -463,8 +488,8 @@ void SessionController::clearSessions()
 	replayActive_ = obs_frontend_replay_buffer_active();
 	if (recordingActive_ || replayActive_ || activeSessionId_) {
 		if (dock_)
-			dock_->showMessage(
-				QStringLiteral("Stop Recording and Replay Buffer before clearing sessions."), true);
+			dock_->showMessage(QStringLiteral("Stop Recording and Replay Buffer before clearing sessions."),
+					   true);
 		return;
 	}
 	if (!repository_.clearSessions()) {
@@ -476,6 +501,54 @@ void SessionController::clearSessions()
 	refresh();
 	if (dock_)
 		dock_->showMessage(QStringLiteral("All session metadata was cleared. Media files were not deleted."));
+}
+
+void SessionController::updateDiskSpaceStatus()
+{
+	if (!dock_ || !frontendReady_)
+		return;
+	dock_->showDiskRefreshActivity();
+	QStringList paths;
+	auto appendOwnedPath = [&paths](char *rawPath) {
+		if (rawPath && *rawPath)
+			paths.push_back(QString::fromUtf8(rawPath));
+		bfree(rawPath);
+	};
+	appendOwnedPath(obs_frontend_get_current_record_output_path());
+	appendOwnedPath(obs_frontend_get_last_recording());
+	appendOwnedPath(obs_frontend_get_last_replay());
+
+	QSet<QString> roots;
+	qint64 lowestAvailable = std::numeric_limits<qint64>::max();
+	QString lowestRoot;
+	for (const QString &path : paths) {
+		if (path.isEmpty() || path == QStringLiteral("<unavailable>"))
+			continue;
+		const QFileInfo pathInfo(path);
+		const QString storagePath = pathInfo.exists() && pathInfo.isDir() ? pathInfo.absoluteFilePath()
+										  : pathInfo.absolutePath();
+		QStorageInfo storage(storagePath);
+		storage.refresh();
+		if (!storage.isValid() || !storage.isReady() || storage.bytesTotal() <= 0 ||
+		    roots.contains(storage.rootPath()))
+			continue;
+		roots.insert(storage.rootPath());
+		if (storage.bytesAvailable() < lowestAvailable) {
+			lowestAvailable = storage.bytesAvailable();
+			lowestRoot = storage.rootPath();
+		}
+	}
+	if (lowestAvailable == std::numeric_limits<qint64>::max()) {
+		dock_->setDiskStatus(QStringLiteral("Disk: unavailable"), false);
+		return;
+	}
+	constexpr qint64 warningThreshold = 10LL * 1024 * 1024 * 1024;
+	const double availableGiB = static_cast<double>(lowestAvailable) / (1024.0 * 1024.0 * 1024.0);
+	const bool warning = lowestAvailable < warningThreshold;
+	const QString suffix = warning ? QStringLiteral(" — LOW") : QString();
+	dock_->setDiskStatus(
+		QStringLiteral("Disk: %1 GiB free on %2%3").arg(availableGiB, 0, 'f', 1).arg(lowestRoot, suffix),
+		warning);
 }
 
 } // namespace replay_timeline

@@ -44,7 +44,10 @@ int main(int argc, char **argv)
 	expect(repository.updateSegmentPath(first, QStringLiteral("C:/vídeo/final-1.mkv")),
 	       "final recording path can replace an initial placeholder");
 
-	const std::int64_t requestId = repository.createRequest(session, 1, run, 42'000, 42'100, QStringLiteral("Bug"));
+	const replay_timeline::ApplicationMetadata metadata{QStringLiteral("game.exe"), QStringLiteral("Game Window"),
+							    QStringLiteral("Game Capture")};
+	const std::int64_t requestId =
+		repository.createRequest(session, 1, run, 42'000, 42'100, QStringLiteral("Bug"), metadata);
 	expect(requestId > 0, "tagged request persists");
 	const std::optional<PendingRequest> request = repository.resolveOldestPending(1, 42'200);
 	expect(request && request->id == requestId && request->tag == QStringLiteral("Bug"),
@@ -55,19 +58,28 @@ int main(int argc, char **argv)
 	const std::vector<RecordingSegment> segments = repository.segmentsForRun(run, 42'000);
 	const auto spans = TimelineMapper::mapReplay(42'000, 20'000, segments);
 	expect(spans.size() == 2, "repository segments feed split-aware mapping");
-	expect(repository.completeProbe(replay, 20'000, QStringLiteral("complete"), QStringLiteral("approximate"),
-					QStringLiteral("test"), spans),
+	expect(repository.completeProbe(replay, 20'000, 2, QStringLiteral("ok"), QStringLiteral("complete"),
+					QStringLiteral("approximate"), QStringLiteral("test"), spans),
 	       "probe result and spans commit atomically");
-	expect(repository.updateReplay(replay, QStringLiteral("Falha"), QStringLiteral("nota, com\nnova linha ✓")),
+	expect(repository.updateReplay(replay, QStringLiteral("Falha"), QStringLiteral("nota, com\nnova linha ✓"), 4),
 	       "Unicode editable metadata persists");
+	expect(!repository.updateReplay(replay, QStringLiteral("Falha"), QString(), 6),
+	       "ratings outside zero through five are rejected");
 
 	const auto rows = repository.replays(session);
 	expect(rows.size() == 1 && rows.front().tag == QStringLiteral("Falha") &&
-		       rows.front().recordingStartNs == 22'000 && rows.front().recordingEndNs == 42'000,
+		       rows.front().recordingStartNs == 22'000 && rows.front().recordingEndNs == 42'000 &&
+		       rows.front().rating == 4 && rows.front().audioTracks == 2 &&
+		       rows.front().audioStatus == QStringLiteral("ok") &&
+		       rows.front().applicationName == QStringLiteral("game.exe") &&
+		       rows.front().windowTitle == QStringLiteral("Game Window") &&
+		       rows.front().captureSource == QStringLiteral("Game Capture"),
 	       "review query reconstructs mapped replay");
 	const auto selectedCsv = repository.csvRows(session);
 	expect(selectedCsv.size() == 2 && selectedCsv.front().recordingPath == QStringLiteral("C:/vídeo/final-1.mkv") &&
-		       selectedCsv.front().probeStatus == QStringLiteral("complete"),
+		       selectedCsv.front().probeStatus == QStringLiteral("complete") &&
+		       selectedCsv.front().rating == 4 && selectedCsv.front().audioTracks == 2 &&
+		       selectedCsv.front().applicationName == QStringLiteral("game.exe"),
 	       "split replay exports finalized paths and probe diagnostics");
 	expect(selectedCsv[0].runStartNs == 22'000 && selectedCsv[0].runEndNs == 30'000 &&
 		       selectedCsv[0].segmentStartNs == 22'000 && selectedCsv[0].segmentEndNs == 30'000 &&
@@ -88,7 +100,8 @@ int main(int argc, char **argv)
 	expect(repository.setSetting(QStringLiteral("tag_names"), QStringLiteral("Funny\nKeep")),
 	       "settings persist before clearing sessions");
 	expect(repository.clearSessions(), "session metadata clears transactionally");
-	expect(repository.sessions().empty() && repository.csvRows().empty(), "clearing removes every session and replay");
+	expect(repository.sessions().empty() && repository.csvRows().empty(),
+	       "clearing removes every session and replay");
 	expect(repository.setting(QStringLiteral("tag_names"), {}) == QStringLiteral("Funny\nKeep"),
 	       "clearing sessions preserves plugin settings");
 

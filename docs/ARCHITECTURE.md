@@ -2,7 +2,7 @@
 
 ## Product invariant
 
-A replay entry must remain useful even when an exact long-recording match is impossible. It always retains its saved path, tag, note, actual duration, request/save times, and an explicit mapping confidence. Long-recording associations are additional spans, never destructive guesses.
+A replay entry must remain useful even when an exact long-recording match is impossible. It always retains its saved path, tag, note, rating, actual duration, audio validation, request/save times, and an explicit mapping confidence. Long-recording associations are additional spans, never destructive guesses.
 
 ## Time model
 
@@ -86,7 +86,10 @@ The initial schema should contain:
 - `replay_recording_spans`
 - `tags`
 
-Important fields include monotonic boundaries, UTC display timestamps, segment order/path, replay duration/probe status, request source, correlation status, notes, and mapping confidence/reason.
+Important fields include monotonic boundaries, UTC display timestamps, segment order/path, replay duration/probe status,
+audio-stream count/status, request source, correlation status, notes, rating, capture application/window/source metadata,
+and mapping confidence/reason. Schema version 2 adds the rating, audio, and capture metadata columns without rewriting
+existing session rows.
 
 Use SQLite on one worker/owner thread. UI queries should return value objects; Qt models must not hold live database cursors. Writes are transactional, and editable notes use debounced updates.
 
@@ -116,9 +119,11 @@ The MVP dock contains:
 - output status and active session summary
 - search box and tag filter
 - session selector
-- replay table with recording interval, tag, note, replay path, recording path(s), duration, and confidence/status
+- replay table with recording interval, tag, rating, note, application/window, audio validation, replay path, recording
+  path(s), duration, and confidence/status
 - actions to edit note/tag, open containing folder, copy path/timecode, retry probe, and export CSV
 - settings for tags and hotkey guidance
+- a destination-volume status that refreshes every 30 seconds and warns below 10 GiB free
 
 Use a model/view table with a proxy filter rather than one widget per row. File opening must require a user action and use Qt desktop services only from the UI thread.
 
@@ -127,12 +132,15 @@ Use a model/view table with a proxy filter rather than one widget per row. File 
 Export UTF-8 CSV with RFC 4180 quoting and stable columns:
 
 ```text
-session_id,replay_id,recording_run,recording_segment,run_start,run_end,segment_start,segment_end,tag,note,replay_duration,replay_path,recording_path,mapping_confidence
+session_id,replay_id,saved_utc,recording_run,recording_segment,run_start,run_end,segment_start,segment_end,tag,note,rating,application_name,window_title,capture_source,replay_duration,audio_tracks,audio_status,replay_path,recording_path,mapping_confidence,probe_status,mapping_reason
 ```
 
 A replay spanning multiple files produces one row per association span with the same replay ID. `run_start` and
 `run_end` locate that span on the cumulative recording-run timeline, while `segment_start` and `segment_end` are local
 to the physical file named by `recording_path`. Replay-only entries produce one row with empty recording fields.
+`rating` is `0` for unrated entries. `audio_tracks` is empty and `audio_status` is `unknown` until a successful probe;
+zero detected streams produces `missing`. Application fields are best-effort snapshots taken when the replay was
+requested, not live lookups performed during export.
 
 ## Compatibility and failure policy
 
