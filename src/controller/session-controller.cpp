@@ -100,8 +100,6 @@ bool SessionController::start(const QString &databasePath, QString &error)
 			beginPause(now);
 	}
 	refresh(activeSessionId_);
-	updateDiskSpaceStatus();
-	diskTimer_->start();
 	return true;
 }
 
@@ -111,6 +109,7 @@ void SessionController::stop()
 		return;
 	unregisterHotkeys();
 	diskTimer_->stop();
+	frontendReady_ = false;
 	repository_.close();
 	started_ = false;
 }
@@ -154,7 +153,13 @@ void SessionController::handleObsEvent(const QString &eventName, const QString &
 {
 	if (!started_)
 		return;
-	if (eventName == QStringLiteral("RECORDING_STARTED")) {
+	if (eventName == QStringLiteral("OBS_FINISHED_LOADING")) {
+		frontendReady_ = true;
+		diskTimer_->start();
+	} else if (eventName == QStringLiteral("OBS_EXIT")) {
+		frontendReady_ = false;
+		diskTimer_->stop();
+	} else if (eventName == QStringLiteral("RECORDING_STARTED")) {
 		recordingActive_ = true;
 		ensureSession(now);
 		beginRecording(now, detailValue(detail));
@@ -500,7 +505,7 @@ void SessionController::clearSessions()
 
 void SessionController::updateDiskSpaceStatus()
 {
-	if (!dock_)
+	if (!dock_ || !frontendReady_)
 		return;
 	QStringList paths;
 	auto appendOwnedPath = [&paths](char *rawPath) {

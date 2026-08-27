@@ -88,6 +88,7 @@ private:
 	int replayGeneration_ = 0;
 	bool recordingActive_ = false;
 	bool replayActive_ = false;
+	bool frontendReady_ = false;
 	bool started_ = false;
 };
 
