@@ -21,6 +21,7 @@
 #include <QStandardItemModel>
 #include <QSet>
 #include <QTableView>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include <obs-module.h>
@@ -80,11 +81,19 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	recordingStatus_ = new QLabel(this);
 	replayStatus_ = new QLabel(this);
 	diskStatus_ = new QLabel(this);
+	diskRefreshActivity_ = new QLabel(text("ReplayTimeline.DiskRefreshing"), this);
+	diskRefreshActivity_->setStyleSheet(QStringLiteral("color: #5bc0de; font-weight: bold;"));
+	diskRefreshActivity_->hide();
+	diskRefreshActivityTimer_ = new QTimer(this);
+	diskRefreshActivityTimer_->setInterval(1'500);
+	diskRefreshActivityTimer_->setSingleShot(true);
+	connect(diskRefreshActivityTimer_, &QTimer::timeout, diskRefreshActivity_, &QWidget::hide);
 	statusLayout->addWidget(recordingStatus_);
 	statusLayout->addSpacing(16);
 	statusLayout->addWidget(replayStatus_);
 	statusLayout->addSpacing(16);
 	statusLayout->addWidget(diskStatus_);
+	statusLayout->addWidget(diskRefreshActivity_);
 	statusLayout->addStretch();
 	layout->addLayout(statusLayout);
 
@@ -320,6 +329,12 @@ void ReplayTimelineDock::setReplayRows(const std::vector<ReplayRow> &rows)
 void ReplayTimelineDock::setTagNames(const QStringList &tags)
 {
 	tagNames_ = tags;
+}
+
+void ReplayTimelineDock::showDiskRefreshActivity()
+{
+	diskRefreshActivity_->show();
+	diskRefreshActivityTimer_->start();
 }
 
 void ReplayTimelineDock::setDiskStatus(const QString &message, bool warning)

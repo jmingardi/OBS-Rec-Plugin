@@ -507,6 +507,7 @@ void SessionController::updateDiskSpaceStatus()
 {
 	if (!dock_ || !frontendReady_)
 		return;
+	dock_->showDiskRefreshActivity();
 	QStringList paths;
 	auto appendOwnedPath = [&paths](char *rawPath) {
 		if (rawPath && *rawPath)

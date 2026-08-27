@@ -16,6 +16,7 @@ class QSortFilterProxyModel;
 class QStandardItem;
 class QStandardItemModel;
 class QTableView;
+class QTimer;
 
 namespace replay_timeline {
 
@@ -39,6 +40,7 @@ public:
 	void setSessions(const std::vector<SessionSummary> &sessions, std::int64_t selectedSessionId);
 	void setReplayRows(const std::vector<ReplayRow> &rows);
 	void setTagNames(const QStringList &tags);
+	void showDiskRefreshActivity();
 	void setDiskStatus(const QString &message, bool warning);
 	void showMessage(const QString &message, bool error = false);
 
@@ -48,6 +50,8 @@ private:
 	QLabel *recordingStatus_ = nullptr;
 	QLabel *replayStatus_ = nullptr;
 	QLabel *diskStatus_ = nullptr;
+	QLabel *diskRefreshActivity_ = nullptr;
+	QTimer *diskRefreshActivityTimer_ = nullptr;
 	QLabel *message_ = nullptr;
 	QComboBox *sessionSelector_ = nullptr;
 	QPushButton *clearSessionsButton_ = nullptr;
