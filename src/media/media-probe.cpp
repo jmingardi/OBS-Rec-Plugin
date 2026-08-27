@@ -21,18 +21,32 @@ QString ffmpegError(int code)
 }
 } // namespace
 
+QString MediaProbeResult::audioStatus() const
+{
+	if (!succeeded() || audioTracks < 0)
+		return QStringLiteral("unknown");
+	return audioTracks > 0 ? QStringLiteral("ok") : QStringLiteral("missing");
+}
+
 MediaProbeResult probeMediaDuration(const QString &path)
 {
 	const QByteArray utf8 = path.toUtf8();
 	AVFormatContext *context = nullptr;
 	int result = avformat_open_input(&context, utf8.constData(), nullptr, nullptr);
 	if (result < 0)
-		return {-1, ffmpegError(result)};
+		return {-1, -1, ffmpegError(result)};
 
 	result = avformat_find_stream_info(context, nullptr);
 	if (result < 0) {
 		avformat_close_input(&context);
-		return {-1, ffmpegError(result)};
+		return {-1, -1, ffmpegError(result)};
+	}
+
+	int audioTracks = 0;
+	for (unsigned int index = 0; index < context->nb_streams; ++index) {
+		const AVStream *stream = context->streams[index];
+		if (stream->codecpar && stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+			++audioTracks;
 	}
 
 	std::int64_t durationNs = -1;
@@ -50,8 +64,8 @@ MediaProbeResult probeMediaDuration(const QString &path)
 	}
 
 	avformat_close_input(&context);
-	return durationNs > 0 ? MediaProbeResult{durationNs, {}}
-			      : MediaProbeResult{-1, QStringLiteral("media duration is unavailable")};
+	return durationNs > 0 ? MediaProbeResult{durationNs, audioTracks, {}}
+			      : MediaProbeResult{-1, audioTracks, QStringLiteral("media duration is unavailable")};
 }
 
 } // namespace replay_timeline

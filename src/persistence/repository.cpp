@@ -159,7 +159,28 @@ CREATE INDEX IF NOT EXISTS replays_session ON replays(session_id, saved_ns DESC)
 INSERT OR IGNORE INTO schema_migrations(version, applied_utc) VALUES(1, datetime('now'));
 COMMIT;
 )sql";
-	return execute(schema);
+	if (!execute(schema))
+		return false;
+	Statement version(database_, "SELECT COALESCE(MAX(version),0) FROM schema_migrations");
+	if (!version.valid() || version.step() != SQLITE_ROW)
+		return false;
+	if (version.integer(0) >= 2)
+		return true;
+	static constexpr const char *version2 = R"sql(
+BEGIN IMMEDIATE;
+ALTER TABLE replay_requests ADD COLUMN application_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE replay_requests ADD COLUMN window_title TEXT NOT NULL DEFAULT '';
+ALTER TABLE replay_requests ADD COLUMN capture_source TEXT NOT NULL DEFAULT '';
+ALTER TABLE replays ADD COLUMN rating INTEGER NOT NULL DEFAULT 0 CHECK(rating BETWEEN 0 AND 5);
+ALTER TABLE replays ADD COLUMN audio_tracks INTEGER;
+ALTER TABLE replays ADD COLUMN audio_status TEXT NOT NULL DEFAULT 'unknown';
+ALTER TABLE replays ADD COLUMN application_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE replays ADD COLUMN window_title TEXT NOT NULL DEFAULT '';
+ALTER TABLE replays ADD COLUMN capture_source TEXT NOT NULL DEFAULT '';
+INSERT INTO schema_migrations(version, applied_utc) VALUES(2, datetime('now'));
+COMMIT;
+)sql";
+	return execute(version2);
 }
 
 bool Repository::recoverInterrupted()
@@ -260,14 +281,18 @@ bool Repository::closePause(std::int64_t pauseId, std::int64_t endedNs)
 }
 
 std::int64_t Repository::createRequest(std::int64_t sessionId, int generation, std::int64_t runId,
-				       std::int64_t recordingEndNs, std::int64_t requestedNs, const QString &tag)
+				       std::int64_t recordingEndNs, std::int64_t requestedNs, const QString &tag,
+				       const ApplicationMetadata &metadata)
 {
 	Statement statement(database_, "INSERT INTO replay_requests(session_id,generation,run_id,recording_end_ns,"
-				       "requested_ns,tag,source,status) VALUES(?1,?2,?3,?4,?5,?6,'plugin','pending')");
+				       "requested_ns,tag,source,status,application_name,window_title,capture_source) "
+				       "VALUES(?1,?2,?3,?4,?5,?6,'plugin','pending',?7,?8,?9)");
 	if (!statement.valid() || !statement.bind(1, sessionId) || !statement.bind(2, generation) ||
 	    (runId ? !statement.bind(3, runId) : !statement.bindNull(3)) ||
 	    (recordingEndNs >= 0 ? !statement.bind(4, recordingEndNs) : !statement.bindNull(4)) ||
-	    !statement.bind(5, requestedNs) || !statement.bind(6, tag) || !succeeded(statement))
+	    !statement.bind(5, requestedNs) || !statement.bind(6, tag) ||
+	    !statement.bind(7, metadata.applicationName) || !statement.bind(8, metadata.windowTitle) ||
+	    !statement.bind(9, metadata.sourceName) || !succeeded(statement))
 		return 0;
 	return lastInsertId();
 }
@@ -282,14 +307,16 @@ std::optional<PendingRequest> Repository::resolveOldestPending(int generation, s
 
 	Statement query(
 		database_,
-		"SELECT id,COALESCE(run_id,0),COALESCE(recording_end_ns,-1),requested_ns,tag "
+		"SELECT id,COALESCE(run_id,0),COALESCE(recording_end_ns,-1),requested_ns,tag,"
+		"application_name,window_title,capture_source "
 		"FROM replay_requests WHERE generation=?1 AND status='pending' AND requested_ns BETWEEN ?3 AND ?2 "
 		"ORDER BY requested_ns,id LIMIT 1");
 	if (!query.valid() || !query.bind(1, generation) || !query.bind(2, savedNs) ||
 	    !query.bind(3, savedNs - requestTimeoutNs) || query.step() != SQLITE_ROW)
 		return std::nullopt;
 
-	PendingRequest result{query.integer(0), query.integer(1), query.integer(2), query.integer(3), query.text(4)};
+	PendingRequest result{query.integer(0), query.integer(1), query.integer(2),
+			      query.integer(3), query.text(4),    {query.text(5), query.text(6), query.text(7)}};
 	Statement update(database_, "UPDATE replay_requests SET status='resolved' WHERE id=?1 AND status='pending'");
 	if (!update.valid() || !update.bind(1, result.id) || !succeeded(update))
 		return std::nullopt;
@@ -297,11 +324,14 @@ std::optional<PendingRequest> Repository::resolveOldestPending(int generation, s
 }
 
 std::int64_t Repository::createReplay(std::int64_t sessionId, const std::optional<PendingRequest> &request,
-				      std::int64_t savedNs, const QString &savedUtc, const QString &path)
+				      std::int64_t savedNs, const QString &savedUtc, const QString &path,
+				      const ApplicationMetadata &metadata)
 {
+	const ApplicationMetadata &captured = request ? request->metadata : metadata;
 	Statement statement(database_,
 			    "INSERT INTO replays(session_id,request_id,tag,replay_path,requested_ns,saved_ns,"
-			    "saved_utc,probe_status,confidence,reason) VALUES(?1,?2,?3,?4,?5,?6,?7,'pending',?8,?9)");
+			    "saved_utc,probe_status,confidence,reason,application_name,window_title,capture_source) "
+			    "VALUES(?1,?2,?3,?4,?5,?6,?7,'pending',?8,?9,?10,?11,?12)");
 	const QString tag = request ? request->tag : QStringLiteral("External");
 	const QString confidence = request ? QStringLiteral("pending") : QStringLiteral("low");
 	const QString reason = request ? QStringLiteral("duration probe pending")
@@ -310,7 +340,9 @@ std::int64_t Repository::createReplay(std::int64_t sessionId, const std::optiona
 	    (request ? !statement.bind(2, request->id) : !statement.bindNull(2)) || !statement.bind(3, tag) ||
 	    !statement.bind(4, path) || (request ? !statement.bind(5, request->requestedNs) : !statement.bindNull(5)) ||
 	    !statement.bind(6, savedNs) || !statement.bind(7, savedUtc) || !statement.bind(8, confidence) ||
-	    !statement.bind(9, reason) || !succeeded(statement))
+	    !statement.bind(9, reason) || !statement.bind(10, captured.applicationName) ||
+	    !statement.bind(11, captured.windowTitle) || !statement.bind(12, captured.sourceName) ||
+	    !succeeded(statement))
 		return 0;
 	return lastInsertId();
 }
@@ -320,7 +352,8 @@ bool Repository::replayProbeTarget(std::int64_t replayId, QString &path, QString
 {
 	Statement query(database_, R"sql(
 SELECT r.replay_path,r.saved_utc,r.saved_ns,q.id,COALESCE(q.run_id,0),COALESCE(q.recording_end_ns,-1),
-       COALESCE(q.requested_ns,0),COALESCE(q.tag,'')
+       COALESCE(q.requested_ns,0),COALESCE(q.tag,''),COALESCE(q.application_name,''),
+       COALESCE(q.window_title,''),COALESCE(q.capture_source,'')
 FROM replays r LEFT JOIN replay_requests q ON q.id=r.request_id WHERE r.id=?1
 )sql");
 	if (!query.valid() || !query.bind(1, replayId) || query.step() != SQLITE_ROW)
@@ -331,8 +364,9 @@ FROM replays r LEFT JOIN replay_requests q ON q.id=r.request_id WHERE r.id=?1
 	if (query.isNull(3))
 		request.reset();
 	else
-		request = PendingRequest{query.integer(3), query.integer(4), query.integer(5), query.integer(6),
-					 query.text(7)};
+		request = PendingRequest{query.integer(3), query.integer(4),
+					 query.integer(5), query.integer(6),
+					 query.text(7),    {query.text(8), query.text(9), query.text(10)}};
 	return true;
 }
 
@@ -342,20 +376,21 @@ bool Repository::updateReplayPath(std::int64_t replayId, const QString &path)
 	return statement.valid() && statement.bind(1, path) && statement.bind(2, replayId) && succeeded(statement);
 }
 
-bool Repository::completeProbe(std::int64_t replayId, std::int64_t durationNs, const QString &probeStatus,
-			       const QString &confidence, const QString &reason,
-			       const std::vector<domain::AssociationSpan> &spans)
+bool Repository::completeProbe(std::int64_t replayId, std::int64_t durationNs, int audioTracks,
+			       const QString &audioStatus, const QString &probeStatus, const QString &confidence,
+			       const QString &reason, const std::vector<domain::AssociationSpan> &spans)
 {
 	if (!execute("BEGIN IMMEDIATE;"))
 		return false;
 	Statement remove(database_, "DELETE FROM replay_recording_spans WHERE replay_id=?1");
 	bool okay = remove.valid() && remove.bind(1, replayId) && succeeded(remove);
 
-	Statement update(database_,
-			 "UPDATE replays SET duration_ns=?1,probe_status=?2,confidence=?3,reason=?4 WHERE id=?5");
+	Statement update(database_, "UPDATE replays SET duration_ns=?1,audio_tracks=?2,audio_status=?3,probe_status=?4,"
+				    "confidence=?5,reason=?6 WHERE id=?7");
 	okay = okay && update.valid() && (durationNs >= 0 ? update.bind(1, durationNs) : update.bindNull(1)) &&
-	       update.bind(2, probeStatus) && update.bind(3, confidence) && update.bind(4, reason) &&
-	       update.bind(5, replayId) && succeeded(update);
+	       (audioTracks >= 0 ? update.bind(2, audioTracks) : update.bindNull(2)) && update.bind(3, audioStatus) &&
+	       update.bind(4, probeStatus) && update.bind(5, confidence) && update.bind(6, reason) &&
+	       update.bind(7, replayId) && succeeded(update);
 	for (const domain::AssociationSpan &span : spans) {
 		if (!okay)
 			break;
@@ -404,7 +439,8 @@ std::vector<ReplayRow> Repository::replays(std::int64_t sessionId) const
 	Statement query(database_, R"sql(
 SELECT r.id,r.session_id,r.saved_utc,
        MIN(s.run_start_ns),MAX(s.run_end_ns),r.tag,r.note,COALESCE(r.duration_ns,-1),r.replay_path,
-       COALESCE(GROUP_CONCAT(DISTINCT s.recording_path),''),r.confidence,r.probe_status
+       COALESCE(GROUP_CONCAT(DISTINCT s.recording_path),''),r.confidence,r.probe_status,r.rating,
+       COALESCE(r.audio_tracks,-1),r.audio_status,r.application_name,r.window_title,r.capture_source
 FROM replays r LEFT JOIN replay_recording_spans s ON s.replay_id=r.id
 WHERE r.session_id=?1 GROUP BY r.id ORDER BY r.saved_ns DESC,r.id DESC
 )sql");
@@ -414,7 +450,9 @@ WHERE r.session_id=?1 GROUP BY r.id ORDER BY r.saved_ns DESC,r.id DESC
 		result.push_back({query.integer(0), query.integer(1), query.text(2),
 				  query.isNull(3) ? -1 : query.integer(3), query.isNull(4) ? -1 : query.integer(4),
 				  query.text(5), query.text(6), query.integer(7), query.text(8), query.text(9),
-				  query.text(10), query.text(11)});
+				  query.text(10), query.text(11), static_cast<int>(query.integer(12)),
+				  static_cast<int>(query.integer(13)), query.text(14), query.text(15), query.text(16),
+				  query.text(17)});
 	}
 	return result;
 }
@@ -425,8 +463,10 @@ std::vector<CsvRow> Repository::csvRows(std::int64_t sessionId) const
 	Statement query(database_, R"sql(
 SELECT r.session_id,r.id,r.saved_utc,COALESCE(rr.ordinal,0),COALESCE(rs.ordinal,0),
        COALESCE(s.run_start_ns,-1),COALESCE(s.run_end_ns,-1),
-       COALESCE(s.segment_start_ns,-1),COALESCE(s.segment_end_ns,-1),r.tag,r.note,
-       COALESCE(r.duration_ns,-1),r.replay_path,COALESCE(s.recording_path,''),r.confidence,r.probe_status,r.reason
+       COALESCE(s.segment_start_ns,-1),COALESCE(s.segment_end_ns,-1),r.tag,r.note,r.rating,
+       r.application_name,r.window_title,r.capture_source,COALESCE(r.duration_ns,-1),
+       COALESCE(r.audio_tracks,-1),r.audio_status,r.replay_path,COALESCE(s.recording_path,''),
+       r.confidence,r.probe_status,r.reason
 FROM replays r
 LEFT JOIN replay_recording_spans s ON s.replay_id=r.id
 LEFT JOIN recording_segments rs ON rs.id=s.segment_id
@@ -436,10 +476,29 @@ WHERE (?1=0 OR r.session_id=?1) ORDER BY r.saved_ns,r.id,s.id
 	if (!query.valid() || !query.bind(1, sessionId))
 		return result;
 	while (query.step() == SQLITE_ROW) {
-		result.push_back({query.integer(0), query.integer(1), query.text(2), query.integer(3),
-				  query.integer(4), query.integer(5), query.integer(6), query.integer(7),
-				  query.integer(8), query.text(9), query.text(10), query.integer(11), query.text(12),
-				  query.text(13), query.text(14), query.text(15), query.text(16)});
+		result.push_back({query.integer(0),
+				  query.integer(1),
+				  query.text(2),
+				  query.integer(3),
+				  query.integer(4),
+				  query.integer(5),
+				  query.integer(6),
+				  query.integer(7),
+				  query.integer(8),
+				  query.text(9),
+				  query.text(10),
+				  static_cast<int>(query.integer(11)),
+				  query.text(12),
+				  query.text(13),
+				  query.text(14),
+				  query.integer(15),
+				  static_cast<int>(query.integer(16)),
+				  query.text(17),
+				  query.text(18),
+				  query.text(19),
+				  query.text(20),
+				  query.text(21),
+				  query.text(22)});
 	}
 	return result;
 }
@@ -455,11 +514,13 @@ bool Repository::clearSessions()
 	return false;
 }
 
-bool Repository::updateReplay(std::int64_t replayId, const QString &tag, const QString &note)
+bool Repository::updateReplay(std::int64_t replayId, const QString &tag, const QString &note, int rating)
 {
-	Statement statement(database_, "UPDATE replays SET tag=?1,note=?2 WHERE id=?3");
-	return statement.valid() && statement.bind(1, tag) && statement.bind(2, note) && statement.bind(3, replayId) &&
-	       succeeded(statement);
+	if (rating < 0 || rating > 5)
+		return false;
+	Statement statement(database_, "UPDATE replays SET tag=?1,note=?2,rating=?3 WHERE id=?4");
+	return statement.valid() && statement.bind(1, tag) && statement.bind(2, note) && statement.bind(3, rating) &&
+	       statement.bind(4, replayId) && succeeded(statement);
 }
 
 QString Repository::setting(const QString &key, const QString &fallback) const

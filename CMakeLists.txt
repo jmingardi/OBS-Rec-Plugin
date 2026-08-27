@@ -51,6 +51,8 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::obs-frontend-api)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Qt6::Core Qt6::Widgets)
 
 find_package(FFmpeg 6.1 REQUIRED avformat avutil)
+list(GET FFMPEG_SHARED_LIBRARIES 0 FFMPEG_RUNTIME_LIBRARY)
+get_filename_component(FFMPEG_RUNTIME_DIR "${FFMPEG_RUNTIME_LIBRARY}" DIRECTORY)
 target_link_libraries(
   ${CMAKE_PROJECT_NAME}
   PRIVATE replay-timeline-export replay-timeline-paths FFmpeg::avformat FFmpeg::avutil
@@ -78,6 +80,8 @@ target_sources(
     src/controller/session-controller.hpp
     src/media/media-probe.cpp
     src/media/media-probe.hpp
+    src/obs/application-metadata.cpp
+    src/obs/application-metadata.hpp
     src/obs/obs-event-bridge.cpp
     src/obs/obs-event-bridge.hpp
     src/plugin/plugin-controller.cpp
@@ -111,6 +115,19 @@ if(BUILD_TESTING)
   set_target_properties(replay-path-resolver-test PROPERTIES CXX_EXTENSIONS OFF)
   add_test(NAME replay-path-resolver COMMAND replay-path-resolver-test)
   set_tests_properties(replay-path-resolver PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+  add_executable(media-probe-test tests/media-probe-test.cpp src/media/media-probe.cpp src/media/media-probe.hpp)
+  target_include_directories(media-probe-test PRIVATE src)
+  target_link_libraries(media-probe-test PRIVATE Qt6::Core FFmpeg::avformat FFmpeg::avutil)
+  set_target_properties(media-probe-test PROPERTIES CXX_EXTENSIONS OFF)
+  add_test(NAME media-probe COMMAND media-probe-test)
+  set_tests_properties(
+    media-probe
+    PROPERTIES
+      ENVIRONMENT_MODIFICATION
+        "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:${FFMPEG_RUNTIME_DIR}"
+      TIMEOUT 15
+  )
 endif()
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})

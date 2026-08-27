@@ -26,10 +26,11 @@ QString timecode(std::int64_t nanoseconds)
 
 QByteArray createCsv(const std::vector<CsvRow> &rows)
 {
-	QString output =
-		QStringLiteral("session_id,replay_id,saved_utc,recording_run,recording_segment,run_start,run_end,"
-			       "segment_start,segment_end,tag,note,replay_duration,replay_path,recording_path,"
-			       "mapping_confidence,probe_status,mapping_reason\r\n");
+	QString output = QStringLiteral(
+		"session_id,replay_id,saved_utc,recording_run,recording_segment,run_start,run_end,"
+		"segment_start,segment_end,tag,note,rating,application_name,window_title,capture_source,"
+		"replay_duration,audio_tracks,audio_status,replay_path,recording_path,mapping_confidence,"
+		"probe_status,mapping_reason\r\n");
 	for (const CsvRow &row : rows) {
 		output += QString::number(row.sessionId) + QLatin1Char(',') + QString::number(row.replayId) +
 			  QLatin1Char(',') + quote(row.savedUtc) + QLatin1Char(',');
@@ -41,10 +42,15 @@ QByteArray createCsv(const std::vector<CsvRow> &rows)
 		output += QLatin1Char(',') + timecode(row.runStartNs) + QLatin1Char(',') + timecode(row.runEndNs) +
 			  QLatin1Char(',') + timecode(row.segmentStartNs) + QLatin1Char(',') +
 			  timecode(row.segmentEndNs) + QLatin1Char(',') + quote(row.tag) + QLatin1Char(',') +
-			  quote(row.note) + QLatin1Char(',') + timecode(row.durationNs) + QLatin1Char(',') +
-			  quote(row.replayPath) + QLatin1Char(',') + quote(row.recordingPath) + QLatin1Char(',') +
-			  quote(row.confidence) + QLatin1Char(',') + quote(row.probeStatus) + QLatin1Char(',') +
-			  quote(row.reason) + QStringLiteral("\r\n");
+			  quote(row.note) + QLatin1Char(',') + QString::number(row.rating) + QLatin1Char(',') +
+			  quote(row.applicationName) + QLatin1Char(',') + quote(row.windowTitle) + QLatin1Char(',') +
+			  quote(row.captureSource) + QLatin1Char(',') + timecode(row.durationNs) + QLatin1Char(',');
+		if (row.audioTracks >= 0)
+			output += QString::number(row.audioTracks);
+		output += QLatin1Char(',') + quote(row.audioStatus) + QLatin1Char(',') + quote(row.replayPath) +
+			  QLatin1Char(',') + quote(row.recordingPath) + QLatin1Char(',') + quote(row.confidence) +
+			  QLatin1Char(',') + quote(row.probeStatus) + QLatin1Char(',') + quote(row.reason) +
+			  QStringLiteral("\r\n");
 	}
 	return output.toUtf8();
 }

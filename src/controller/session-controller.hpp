@@ -15,6 +15,8 @@
 #include <obs.h>
 #include <obs-hotkey.h>
 
+class QTimer;
+
 namespace replay_timeline {
 
 class ReplayTimelineDock;
@@ -63,8 +65,8 @@ private:
 			std::optional<PendingRequest> request);
 	void retryProbe(std::int64_t replayId);
 	void finishProbe(std::int64_t replayId, const std::optional<PendingRequest> &request, std::int64_t durationNs,
-			 const QString &error, const QString &resolvedPath, const QString &resolutionDetail,
-			 const QDateTime &expectedRecordingStartedUtc);
+			 int audioTracks, const QString &audioStatus, const QString &error, const QString &resolvedPath,
+			 const QString &resolutionDetail, const QDateTime &expectedRecordingStartedUtc);
 	void loadTags();
 	void configureTags(const QStringList &tags);
 	void registerHotkeys();
@@ -72,8 +74,10 @@ private:
 	void refresh(std::int64_t preferredSession = 0);
 	void exportCsv(const QString &path, bool allSessions);
 	void clearSessions();
+	void updateDiskSpaceStatus();
 
 	QPointer<ReplayTimelineDock> dock_;
+	QTimer *diskTimer_ = nullptr;
 	Repository repository_;
 	std::vector<HotkeyRegistration> hotkeys_;
 	QStringList tags_;
