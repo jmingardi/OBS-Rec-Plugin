@@ -1,5 +1,6 @@
 #pragma once
 
+#include "export/editor-exporter.hpp"
 #include "persistence/repository.hpp"
 
 #include <cstdint>
@@ -32,6 +33,7 @@ public:
 		std::function<void(std::int64_t)> sessionSelected;
 		std::function<void(std::int64_t, const QString &, const QString &, int)> replayEdited;
 		std::function<void(const QString &, bool)> exportCsv;
+		std::function<void(const QString &, EditorExportFormat, const EditorExportOptions &)> exportEditor;
 		std::function<void(const QStringList &)> tagsConfigured;
 		std::function<void(std::int64_t)> retryProbe;
 		std::function<void()> refreshRequested;
@@ -47,6 +49,7 @@ public:
 	void setReplayRows(const std::vector<ReplayRow> &rows);
 	void setReplayThumbnail(std::int64_t replayId, const QString &replayPath, const QString &thumbnailPath,
 				const QString &error);
+	void setDefaultEditorFrameRate(int numerator, int denominator);
 	void clearPreview();
 	void setTagNames(const QStringList &tags);
 	void showDiskRefreshActivity();
@@ -80,6 +83,8 @@ private:
 	Callbacks callbacks_;
 	QStringList tagNames_;
 	QList<int> normalSplitterSizes_;
+	int editorFrameRateNumerator_ = 60;
+	int editorFrameRateDenominator_ = 1;
 	bool loadingRows_ = false;
 	bool previewFocusMode_ = false;
 };

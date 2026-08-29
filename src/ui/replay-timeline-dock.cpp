@@ -1,17 +1,21 @@
 #include "replay-timeline-dock.hpp"
 #include "replay-preview-widget.hpp"
 
+#include <algorithm>
+#include <tuple>
 #include <utility>
 
 #include <QComboBox>
 #include <QColor>
 #include <QDateTime>
 #include <QDialog>
+#include <QDialogButtonBox>
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFont>
 #include <QFrame>
+#include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QIcon>
@@ -138,6 +142,7 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	auto *diagnosticsButton = new QPushButton(text("ReplayTimeline.DiagnosticsButton"), this);
 	auto *exportButton = new QPushButton(text("ReplayTimeline.ExportCsv"), this);
 	auto *exportAllButton = new QPushButton(text("ReplayTimeline.ExportAllCsv"), this);
+	auto *exportEditorButton = new QPushButton(text("ReplayTimeline.ExportEditor"), this);
 	controls->addWidget(new QLabel(text("ReplayTimeline.Session"), this));
 	controls->addWidget(sessionSelector_);
 	controls->addWidget(clearSessionsButton_);
@@ -154,14 +159,15 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	searchAndExport->addWidget(search, 1);
 	searchAndExport->addWidget(exportButton);
 	searchAndExport->addWidget(exportAllButton);
+	searchAndExport->addWidget(exportEditorButton);
 	layout->addWidget(searchBar_);
 
 	replayModel_ = new QStandardItemModel(0, ColumnCount, this);
 	replayModel_->setHorizontalHeaderLabels(
-		{text("ReplayTimeline.Thumbnail"), text("ReplayTimeline.Timestamp"), text("ReplayTimeline.RecordingTime"),
-		 text("ReplayTimeline.Tag"),
-		 text("ReplayTimeline.Rating"), text("ReplayTimeline.Note"), text("ReplayTimeline.Application"),
-		 text("ReplayTimeline.Audio"), text("ReplayTimeline.Duration"), text("ReplayTimeline.ReplayPath"),
+		{text("ReplayTimeline.Thumbnail"), text("ReplayTimeline.Timestamp"),
+		 text("ReplayTimeline.RecordingTime"), text("ReplayTimeline.Tag"), text("ReplayTimeline.Rating"),
+		 text("ReplayTimeline.Note"), text("ReplayTimeline.Application"), text("ReplayTimeline.Audio"),
+		 text("ReplayTimeline.Duration"), text("ReplayTimeline.ReplayPath"),
 		 text("ReplayTimeline.RecordingPath"), text("ReplayTimeline.Confidence")});
 	replayProxy_ = new QSortFilterProxyModel(this);
 	replayProxy_->setSourceModel(replayModel_);
@@ -228,10 +234,12 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	if (!settingsPath.isEmpty()) {
 		QDir().mkpath(QFileInfo(settingsPath).absolutePath());
 		uiSettings_ = new QSettings(settingsPath, QSettings::IniFormat, this);
-		const QByteArray splitterState = uiSettings_->value(QStringLiteral("layout/contentSplitter")).toByteArray();
+		const QByteArray splitterState =
+			uiSettings_->value(QStringLiteral("layout/contentSplitter")).toByteArray();
 		if (!splitterState.isEmpty())
 			contentSplitter_->restoreState(splitterState);
-		const QByteArray headerState = uiSettings_->value(QStringLiteral("layout/replayTableHeader")).toByteArray();
+		const QByteArray headerState =
+			uiSettings_->value(QStringLiteral("layout/replayTableHeader")).toByteArray();
 		if (!headerState.isEmpty())
 			replayHeader->restoreState(headerState);
 	}
@@ -330,6 +338,78 @@ ReplayTimelineDock::ReplayTimelineDock(QWidget *parent) : QWidget(parent)
 	};
 	connect(exportButton, &QPushButton::clicked, this, [exportCsv]() { exportCsv(false); });
 	connect(exportAllButton, &QPushButton::clicked, this, [exportCsv]() { exportCsv(true); });
+	connect(exportEditorButton, &QPushButton::clicked, this, [this]() {
+		if (!callbacks_.exportEditor)
+			return;
+		QDialog optionsDialog(this);
+		optionsDialog.setWindowTitle(text("ReplayTimeline.EditorExportTitle"));
+		auto *form = new QFormLayout(&optionsDialog);
+		auto *format = new QComboBox(&optionsDialog);
+		format->addItem(text("ReplayTimeline.ResolveEdl"),
+				QVariant::fromValue(static_cast<int>(EditorExportFormat::DaVinciResolveEdl)));
+		format->addItem(text("ReplayTimeline.PremiereXml"),
+				QVariant::fromValue(static_cast<int>(EditorExportFormat::AdobePremiereXml)));
+		auto *frameRate = new QComboBox(&optionsDialog);
+		const std::vector<std::tuple<const char *, int, int>> frameRates{
+			{"23.976", 24'000, 1'001},   {"24", 24, 1}, {"25", 25, 1},
+			{"29.97 DF", 30'000, 1'001}, {"30", 30, 1}, {"50", 50, 1},
+			{"59.94 DF", 60'000, 1'001}, {"60", 60, 1}, {"120", 120, 1},
+		};
+		int selectedFrameRate = -1;
+		for (const auto &[label, numerator, denominator] : frameRates) {
+			frameRate->addItem(QString::fromLatin1(label),
+					   QStringLiteral("%1/%2").arg(numerator).arg(denominator));
+			if (numerator == editorFrameRateNumerator_ && denominator == editorFrameRateDenominator_)
+				selectedFrameRate = frameRate->count() - 1;
+		}
+		if (uiSettings_) {
+			const QString saved = uiSettings_->value(QStringLiteral("export/editorFrameRate")).toString();
+			const int savedIndex = frameRate->findData(saved);
+			if (savedIndex >= 0)
+				selectedFrameRate = savedIndex;
+		}
+		frameRate->setCurrentIndex(selectedFrameRate >= 0 ? selectedFrameRate
+								  : frameRate->findData(QStringLiteral("60/1")));
+		auto *timelineStart = new QComboBox(&optionsDialog);
+		timelineStart->addItem(QStringLiteral("01:00:00:00"), 1);
+		timelineStart->addItem(QStringLiteral("00:00:00:00"), 0);
+		if (uiSettings_)
+			timelineStart->setCurrentIndex(
+				std::max(0, timelineStart->findData(uiSettings_->value(
+						    QStringLiteral("export/timelineStartHours"), 1))));
+		form->addRow(text("ReplayTimeline.EditorFormat"), format);
+		form->addRow(text("ReplayTimeline.EditorFrameRate"), frameRate);
+		form->addRow(text("ReplayTimeline.EditorTimelineStart"), timelineStart);
+		auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &optionsDialog);
+		connect(buttons, &QDialogButtonBox::accepted, &optionsDialog, &QDialog::accept);
+		connect(buttons, &QDialogButtonBox::rejected, &optionsDialog, &QDialog::reject);
+		form->addRow(buttons);
+		if (optionsDialog.exec() != QDialog::Accepted)
+			return;
+
+		const EditorExportFormat selectedFormat =
+			static_cast<EditorExportFormat>(format->currentData().toInt());
+		const QStringList rateParts = frameRate->currentData().toString().split(QLatin1Char('/'));
+		if (rateParts.size() != 2)
+			return;
+		const EditorExportOptions options{{rateParts[0].toInt(), rateParts[1].toInt()},
+						  timelineStart->currentData().toInt()};
+		if (uiSettings_) {
+			uiSettings_->setValue(QStringLiteral("export/editorFrameRate"), frameRate->currentData());
+			uiSettings_->setValue(QStringLiteral("export/timelineStartHours"), options.timelineStartHours);
+		}
+		const bool resolve = selectedFormat == EditorExportFormat::DaVinciResolveEdl;
+		const QString defaultName = resolve ? QStringLiteral("replay-markers-resolve.edl")
+						    : QStringLiteral("replay-markers-premiere.xml");
+		const QString filter = resolve ? QStringLiteral("DaVinci Resolve marker EDL (*.edl)")
+					       : QStringLiteral("Adobe Premiere / Final Cut Pro 7 XML (*.xml)");
+		QString path = QFileDialog::getSaveFileName(this, text("ReplayTimeline.EditorExportTitle"), defaultName,
+							    filter);
+		if (!path.isEmpty() && QFileInfo(path).suffix().isEmpty())
+			path += resolve ? QStringLiteral(".edl") : QStringLiteral(".xml");
+		if (!path.isEmpty())
+			callbacks_.exportEditor(path, selectedFormat, options);
+	});
 	connect(configureTags, &QPushButton::clicked, this, [this]() {
 		bool accepted = false;
 		const QString value = QInputDialog::getText(this, text("ReplayTimeline.ConfigureTags"),
@@ -389,6 +469,14 @@ void ReplayTimelineDock::setOutputState(bool recordingActive, bool recordingPaus
 void ReplayTimelineDock::setCallbacks(Callbacks callbacks)
 {
 	callbacks_ = std::move(callbacks);
+}
+
+void ReplayTimelineDock::setDefaultEditorFrameRate(int numerator, int denominator)
+{
+	if (numerator > 0 && denominator > 0) {
+		editorFrameRateNumerator_ = numerator;
+		editorFrameRateDenominator_ = denominator;
+	}
 }
 
 void ReplayTimelineDock::setSessions(const std::vector<SessionSummary> &sessions, std::int64_t selectedSessionId)

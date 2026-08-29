@@ -32,7 +32,13 @@ target_link_libraries(replay-timeline-storage PUBLIC replay-timeline-domain Qt6:
 target_compile_features(replay-timeline-storage PUBLIC cxx_std_17)
 set_target_properties(replay-timeline-storage PROPERTIES CXX_EXTENSIONS OFF POSITION_INDEPENDENT_CODE ON)
 
-add_library(replay-timeline-export STATIC src/export/csv-exporter.cpp src/export/csv-exporter.hpp)
+add_library(
+  replay-timeline-export STATIC
+  src/export/csv-exporter.cpp
+  src/export/csv-exporter.hpp
+  src/export/editor-exporter.cpp
+  src/export/editor-exporter.hpp
+)
 target_include_directories(replay-timeline-export PUBLIC src)
 target_link_libraries(replay-timeline-export PUBLIC replay-timeline-storage Qt6::Core)
 target_compile_features(replay-timeline-export PUBLIC cxx_std_17)
@@ -113,6 +119,12 @@ if(BUILD_TESTING)
   set_target_properties(csv-exporter-test PROPERTIES CXX_EXTENSIONS OFF)
   add_test(NAME csv-exporter COMMAND csv-exporter-test)
   set_tests_properties(csv-exporter PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+  add_executable(editor-exporter-test tests/editor-exporter-test.cpp)
+  target_link_libraries(editor-exporter-test PRIVATE replay-timeline-export Qt6::Core)
+  set_target_properties(editor-exporter-test PROPERTIES CXX_EXTENSIONS OFF)
+  add_test(NAME editor-exporter COMMAND editor-exporter-test)
+  set_tests_properties(editor-exporter PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
 
   add_executable(replay-path-resolver-test tests/replay-path-resolver-test.cpp)
   target_link_libraries(replay-path-resolver-test PRIVATE replay-timeline-paths Qt6::Core)
