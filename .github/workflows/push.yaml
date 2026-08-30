@@ -76,7 +76,7 @@ jobs:
               echo 'validTag=true' >> $GITHUB_OUTPUT
               echo 'prerelease=false' >> $GITHUB_OUTPUT
               echo 'draft=true' >> $GITHUB_OUTPUT
-              echo 'assetScope=all' >> $GITHUB_OUTPUT
+              echo 'assetScope=windows' >> $GITHUB_OUTPUT
               echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
               echo "releaseName=${PLUGIN_NAME} - ${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
               ;;
@@ -84,7 +84,7 @@ jobs:
               echo 'validTag=true' >> $GITHUB_OUTPUT
               echo 'prerelease=true' >> $GITHUB_OUTPUT
               echo 'draft=true' >> $GITHUB_OUTPUT
-              echo 'assetScope=all' >> $GITHUB_OUTPUT
+              echo 'assetScope=windows' >> $GITHUB_OUTPUT
               echo "version=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
               echo "releaseName=${PLUGIN_NAME} - ${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
               ;;
@@ -107,16 +107,7 @@ jobs:
           root_dir="$(pwd)"
           commit_hash="${GITHUB_SHA:0:9}"
 
-          if [[ '${{ steps.check.outputs.assetScope }}' == 'windows' ]]; then
-            variants=('windows-x64;zip|exe')
-          else
-            variants=(
-              'windows-x64;zip|exe'
-              'macos-universal;tar.xz|pkg'
-              'ubuntu-24.04-x86_64;tar.xz|deb|ddeb'
-              'sources;tar.xz'
-            )
-          fi
+          variants=('windows-x64;zip|exe')
 
           for variant_data in "${variants[@]}"; do
             IFS=';' read -r variant suffix <<< "${variant_data}"
@@ -138,7 +129,7 @@ jobs:
           shopt -s extglob
           shopt -s nullglob
 
-          files=(${{ github.workspace }}/@(*.exe|*.deb|*.ddeb|*.pkg|*.tar.xz|*.zip))
+          files=(${{ github.workspace }}/@(*.exe|*.zip))
           if (( ${#files} == 0 )); then
             echo 'No packaged artifacts were produced; refusing to create an empty release.' >&2
             exit 1
@@ -218,7 +209,3 @@ jobs:
           files: |
             ${{ github.workspace }}/*.exe
             ${{ github.workspace }}/*.zip
-            ${{ github.workspace }}/*.pkg
-            ${{ github.workspace }}/*.deb
-            ${{ github.workspace }}/*.ddeb
-            ${{ github.workspace }}/*.tar.xz

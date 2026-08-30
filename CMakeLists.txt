@@ -33,7 +33,8 @@ target_compile_features(replay-timeline-storage PUBLIC cxx_std_17)
 set_target_properties(replay-timeline-storage PROPERTIES CXX_EXTENSIONS OFF POSITION_INDEPENDENT_CODE ON)
 
 add_library(
-  replay-timeline-export STATIC
+  replay-timeline-export
+  STATIC
   src/export/csv-exporter.cpp
   src/export/csv-exporter.hpp
   src/export/editor-exporter.cpp
@@ -67,11 +68,7 @@ target_link_libraries(
 target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_17)
 set_target_properties(
   ${CMAKE_PROJECT_NAME}
-  PROPERTIES
-    AUTOMOC ON
-    AUTOUIC ON
-    AUTORCC ON
-    CXX_EXTENSIONS OFF
+  PROPERTIES AUTOMOC ON AUTOUIC ON AUTORCC ON CXX_EXTENSIONS OFF
 )
 
 target_compile_options(
@@ -112,25 +109,37 @@ if(BUILD_TESTING)
   target_link_libraries(repository-test PRIVATE replay-timeline-storage Qt6::Core)
   set_target_properties(repository-test PROPERTIES CXX_EXTENSIONS OFF)
   add_test(NAME repository COMMAND repository-test)
-  set_tests_properties(repository PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+  set_tests_properties(
+    repository
+    PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+  )
 
   add_executable(csv-exporter-test tests/csv-exporter-test.cpp)
   target_link_libraries(csv-exporter-test PRIVATE replay-timeline-export Qt6::Core)
   set_target_properties(csv-exporter-test PROPERTIES CXX_EXTENSIONS OFF)
   add_test(NAME csv-exporter COMMAND csv-exporter-test)
-  set_tests_properties(csv-exporter PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+  set_tests_properties(
+    csv-exporter
+    PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+  )
 
   add_executable(editor-exporter-test tests/editor-exporter-test.cpp)
   target_link_libraries(editor-exporter-test PRIVATE replay-timeline-export Qt6::Core)
   set_target_properties(editor-exporter-test PROPERTIES CXX_EXTENSIONS OFF)
   add_test(NAME editor-exporter COMMAND editor-exporter-test)
-  set_tests_properties(editor-exporter PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+  set_tests_properties(
+    editor-exporter
+    PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+  )
 
   add_executable(replay-path-resolver-test tests/replay-path-resolver-test.cpp)
   target_link_libraries(replay-path-resolver-test PRIVATE replay-timeline-paths Qt6::Core)
   set_target_properties(replay-path-resolver-test PROPERTIES CXX_EXTENSIONS OFF)
   add_test(NAME replay-path-resolver COMMAND replay-path-resolver-test)
-  set_tests_properties(replay-path-resolver PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+  set_tests_properties(
+    replay-path-resolver
+    PROPERTIES ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>"
+  )
 
   add_executable(media-probe-test tests/media-probe-test.cpp src/media/media-probe.cpp src/media/media-probe.hpp)
   target_include_directories(media-probe-test PRIVATE src)
