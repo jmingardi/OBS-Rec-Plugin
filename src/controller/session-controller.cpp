@@ -68,8 +68,7 @@ bool SessionController::start(const QString &databasePath, QString &error)
 	}
 
 	started_ = true;
-	thumbnailCacheDirectory_ =
-		QDir(QFileInfo(databasePath).absolutePath()).filePath(QStringLiteral("thumbnails"));
+	thumbnailCacheDirectory_ = QDir(QFileInfo(databasePath).absolutePath()).filePath(QStringLiteral("thumbnails"));
 	loadTags();
 	registerHotkeys();
 	if (dock_) {
@@ -83,12 +82,19 @@ bool SessionController::start(const QString &databasePath, QString &error)
 					dock_->showMessage(repository_.lastError(), true);
 			},
 			[this](const QString &path, bool allSessions) { exportCsv(path, allSessions); },
+			[this](const QString &path, EditorExportFormat format, const EditorExportOptions &options) {
+				exportEditor(path, format, options);
+			},
 			[this](const QStringList &tags) { configureTags(tags); },
 			[this](std::int64_t replayId) { retryProbe(replayId); },
 			[this]() { refresh(); },
 			[this]() { clearSessions(); },
 		});
 		dock_->setTagNames(tags_);
+		obs_video_info videoInfo{};
+		if (obs_get_video_info(&videoInfo))
+			dock_->setDefaultEditorFrameRate(static_cast<int>(videoInfo.fps_num),
+							 static_cast<int>(videoInfo.fps_den));
 	}
 
 	const std::int64_t now = static_cast<std::int64_t>(os_gettime_ns());
@@ -482,8 +488,8 @@ void SessionController::refresh(std::int64_t preferredSession)
 	if (!selectedSessionId_ && !sessions.empty())
 		selectedSessionId_ = sessions.front().id;
 	dock_->setSessions(sessions, selectedSessionId_);
-	const std::vector<ReplayRow> rows =
-		selectedSessionId_ ? repository_.replays(selectedSessionId_) : std::vector<ReplayRow>{};
+	const std::vector<ReplayRow> rows = selectedSessionId_ ? repository_.replays(selectedSessionId_)
+							       : std::vector<ReplayRow>{};
 	dock_->setReplayRows(rows);
 	if (frontendReady_) {
 		for (const ReplayRow &row : rows)
@@ -501,6 +507,39 @@ void SessionController::exportCsv(const QString &path, bool allSessions)
 	}
 	if (dock_)
 		dock_->showMessage(QStringLiteral("CSV exported to %1").arg(path));
+}
+
+void SessionController::exportEditor(const QString &path, EditorExportFormat format, const EditorExportOptions &options)
+{
+	if (!selectedSessionId_) {
+		if (dock_)
+			dock_->showMessage(QStringLiteral("Select a session before exporting editor markers."), true);
+		return;
+	}
+	QStringList writtenPaths;
+	QString error;
+	int markerCount = 0;
+	int skippedReplayCount = 0;
+	if (!writeEditorExport(path, format, repository_.csvRows(selectedSessionId_), options, writtenPaths,
+			       markerCount, skippedReplayCount, error)) {
+		if (dock_)
+			dock_->showMessage(error, true);
+		return;
+	}
+	if (!dock_)
+		return;
+	QString message;
+	if (writtenPaths.size() == 1) {
+		message = QStringLiteral("%1 editor markers exported to %2").arg(markerCount).arg(writtenPaths.front());
+	} else {
+		message = QStringLiteral("%1 editor markers exported in %2 files beside %3")
+				  .arg(markerCount)
+				  .arg(writtenPaths.size())
+				  .arg(writtenPaths.front());
+	}
+	if (skippedReplayCount > 0)
+		message += QStringLiteral("; skipped %1 replay(s) without a recording mapping").arg(skippedReplayCount);
+	dock_->showMessage(message);
 }
 
 void SessionController::clearSessions()
@@ -582,7 +621,8 @@ void SessionController::requestThumbnail(const ReplayRow &row)
 {
 	if (!dock_ || row.replayPath.isEmpty() || row.replayPath == QStringLiteral("<unavailable>")) {
 		if (dock_)
-			dock_->setReplayThumbnail(row.id, row.replayPath, {}, QStringLiteral("Replay path is unavailable."));
+			dock_->setReplayThumbnail(row.id, row.replayPath, {},
+						  QStringLiteral("Replay path is unavailable."));
 		return;
 	}
 	const QString cachedPath = replayThumbnailCachePath(thumbnailCacheDirectory_, row.replayPath);
@@ -609,7 +649,8 @@ void SessionController::requestThumbnail(const ReplayRow &row)
 					return;
 				self->thumbnailJobs_.remove(replayId);
 				if (self->started_ && self->dock_)
-					self->dock_->setReplayThumbnail(replayId, replayPath, result.path, result.error);
+					self->dock_->setReplayThumbnail(replayId, replayPath, result.path,
+									result.error);
 			},
 			Qt::QueuedConnection);
 	});

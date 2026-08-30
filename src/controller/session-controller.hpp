@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/timeline-mapper.hpp"
+#include "export/editor-exporter.hpp"
 #include "persistence/repository.hpp"
 
 #include <cstdint>
@@ -75,6 +76,7 @@ private:
 	void unregisterHotkeys();
 	void refresh(std::int64_t preferredSession = 0);
 	void exportCsv(const QString &path, bool allSessions);
+	void exportEditor(const QString &path, EditorExportFormat format, const EditorExportOptions &options);
 	void clearSessions();
 	void updateDiskSpaceStatus();
 	void requestThumbnail(const ReplayRow &row);

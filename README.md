@@ -13,7 +13,7 @@ The working product name is **OBS Replay Timeline**. The first release will prov
 
 ## Status
 
-The native MVP and live-validated 0.2 feature set are on `main`. Version 0.3 adds asynchronous cached replay thumbnails, an embedded seekable OBS Media Source preview, and persistent user-resizable replay-table columns. The plugin also includes tagged replay hotkeys, recording/pause/split tracking, FIFO request/save correlation, actual-duration and audio-track probing, split-aware timeline mapping, SQLite recovery, searchable/editable session review, ratings, application metadata, disk-space warnings, probe retry, and CSV export. The Windows x64 build and automated tests pass; the new 0.3 preview lifecycle still requires broader live OBS validation.
+The native MVP and live-validated 0.2 feature set are on `main`. Version 0.3 adds asynchronous cached replay thumbnails, an embedded seekable OBS Media Source preview, and persistent user-resizable replay-table columns. Version 0.4 adds frame-accurate DaVinci Resolve timeline-marker EDL and Adobe Premiere-compatible Final Cut Pro 7 XML exports. The plugin also includes tagged replay hotkeys, recording/pause/split tracking, FIFO request/save correlation, actual-duration and audio-track probing, split-aware timeline mapping, SQLite recovery, searchable/editable session review, ratings, application metadata, disk-space warnings, probe retry, and diagnostic CSV export. The Windows x64 build and automated tests pass; the preview lifecycle and editor imports still require broader live validation.
 
 ## Use
 
@@ -21,7 +21,8 @@ The native MVP and live-validated 0.2 feature set are on `main`. Version 0.3 add
 2. Open **Settings → Hotkeys** and assign the `Replay Timeline: Save Replay — Funny/Kill/Bug/Keep` actions.
 3. Open **Docks → Replay Timeline**.
 4. Use the plugin hotkeys for precise request timestamps. Replays saved through OBS's built-in hotkey are still catalogued as `External`, with lower mapping confidence.
-5. Search replay rows, edit tag/note/rating cells, retry failed media probes, or export the selected session to CSV. A
+5. Search replay rows, edit tag/note/rating cells, retry failed media probes, or export the selected session to CSV,
+   DaVinci Resolve, or Adobe Premiere. A
    rating of `0` means unrated; valid ratings are whole numbers from `1` through `5`. Use
    **Export all CSV** to combine every stored session.
 6. Select a replay row to load its embedded preview. Playback starts muted, and enabled preview audio is monitor-only
@@ -31,6 +32,20 @@ The native MVP and live-validated 0.2 feature set are on `main`. Version 0.3 add
    thumbnails. The confirmation explicitly preserves every replay and recording media file.
 
 Tag names can be changed from the dock. Slot IDs remain stable so existing OBS key assignments survive renamed tags.
+
+## Editor marker exports
+
+Select a session and choose **Export for editor…**. Match the export frame rate to the recording and choose whether the
+editor timeline starts at `01:00:00:00` or `00:00:00:00`.
+
+- **DaVinci Resolve** exports timeline-marker EDL. A session with more than one recording run produces a safely named
+  EDL beside the selected path for each run. In Resolve, import each file with the timeline marker EDL command.
+- **Adobe Premiere** exports Final Cut Pro 7 XML, which Premiere imports through **File → Import**. The imported project
+  contains one marker sequence per recording run; copy its sequence markers to the corresponding editing sequence.
+
+Markers use run-global recording time, so a replay spanning split recording files remains one marker. Rows associated
+only with Replay Buffer media have no recording timeline position and are reported as skipped. Tags, ratings, notes,
+application metadata, replay paths, and mapping confidence are carried into the editor marker metadata.
 
 The dock checks the recording and replay destination volumes every 30 seconds. It shows a red `LOW` warning when the
 least-free destination has less than 10 GiB available. New replay probes also count audio streams: `missing` means the
