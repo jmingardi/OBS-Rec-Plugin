@@ -58,7 +58,7 @@ source name when OBS exposes them.
 - OBS Studio 32.2.2
 - Qt 6 from the matching OBS dependency bundle
 - C++17, CMake, and the official OBS plugin-template build layout
-- Windows x64 first; macOS and Linux after the event and media-probe behavior is validated
+- Windows x64 only; macOS and Linux are not currently supported
 - No Python or Lua in the core plugin
 
 ## Build
@@ -124,9 +124,9 @@ initial directory-only recording path with the finalized file path. Older failed
 - Thumbnail generation is serialized in a background worker. Embedded preview uses OBS's installed FFmpeg Media Source,
   starts muted, and plays through **Settings → Audio → Advanced → Monitoring Device**. A stale or disconnected
   monitoring endpoint produces silent preview audio. Preview rendering is currently runtime-supported on Windows;
-  Linux/macOS remains unvalidated. **Diagnostics…** opens lifecycle logs in a separate modeless window that can be
+  Linux/macOS are not currently supported. **Diagnostics…** opens lifecycle logs in a separate modeless window that can be
   closed without clearing its contents.
-- The plugin currently targets OBS Studio 32.2 or newer and Windows x64. macOS/Linux CI scaffolding is present but not yet runtime-validated.
+- The plugin currently targets OBS Studio 32.2 or newer on Windows x64.
 
 ## Support the project
 
