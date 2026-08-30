@@ -11,10 +11,6 @@ Native C++/Qt OBS Studio plugin that associates saved Replay Buffer clips with t
 
 The working product name is **OBS Replay Timeline**. The first release will provide an OBS dock for tagged replay capture, session review, notes, search, and CSV marker export.
 
-## Status
-
-The native MVP and live-validated 0.2 feature set are on `main`. Version 0.3 adds asynchronous cached replay thumbnails, an embedded seekable OBS Media Source preview, and persistent user-resizable replay-table columns. Version 0.4 adds frame-accurate DaVinci Resolve timeline-marker EDL and Adobe Premiere-compatible Final Cut Pro 7 XML exports. The plugin also includes tagged replay hotkeys, recording/pause/split tracking, FIFO request/save correlation, actual-duration and audio-track probing, split-aware timeline mapping, SQLite recovery, searchable/editable session review, ratings, application metadata, disk-space warnings, probe retry, and diagnostic CSV export. The Windows x64 build and automated tests pass; the preview lifecycle and editor imports still require broader live validation.
-
 ## Use
 
 1. Enable Replay Buffer and optionally start a simultaneous recording.
@@ -81,23 +77,6 @@ ctest --test-dir build_x64 -C RelWithDebInfo --output-on-failure
 
 The first configure downloads the pinned OBS sources and dependency bundles into `.deps/`.
 The development output is under `build_x64/rundir/RelWithDebInfo`. Release packaging is also available through the imported official template workflows.
-
-## Windows release packages
-
-The Windows GitHub Actions job produces both a manual-install ZIP and an Inno Setup installer. The installer defaults
-to OBS's recommended system plugin directory, `C:\ProgramData\obs-studio\plugins\obs-replay-timeline`, supports
-in-place upgrades and clean binary removal, and deliberately leaves session metadata in the OBS profile untouched.
-Select a different destination in the installer for a custom or portable OBS setup.
-
-Every non-documentation push or merge to `main` builds a Windows ZIP and Inno Setup installer, then publishes a development pre-release
-named `OBS Replay Timeline - X.Y.Z`, where `X.Y.Z` comes from `buildspec.json`. Its internal tag remains unique to the
-workflow run. The release description contains the complete curated bullet list from
-`.github/release-notes/<version>.md` plus SHA-256 checksums; publishing fails when those versioned notes are absent, empty, or
-not a bullet list. Development releases remain pre-releases; their internal tags use a fixed-width workflow sequence
-and an annotated tag timestamp so GitHub displays the newest publication first, including multiple releases on the
-same day. Pushes to `test` do not run this release workflow. A semantic version tag matching `buildspec.json` creates the normal draft
-multi-platform release after all configured builds succeed. Installers are unsigned until Windows code-signing
-credentials are configured, so Windows SmartScreen may display a warning.
 
 ## Metadata and privacy
 
